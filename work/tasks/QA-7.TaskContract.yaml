@@ -1,0 +1,18 @@
+apiVersion: orun.io/v1
+kind: TaskContract
+metadata:
+  name: QA-7
+spec:
+  goal: Orun QA tests itself by default — a workspace's first hub can be Orun QA's own, filled in one step from a manifest of Orun QA's features kept in this repository, through an idempotent import that any hub can use.
+  affects:
+    - default/orun-qa/qa-worker
+    - default/orun-qa/qa-worker-tests
+    - default/orun-qa/api-edge
+    - default/orun-qa/contracts
+    - default/orun-qa/sdk
+    - default/orun-qa/web-console-next
+  doneWhen:
+    - POST …/qa/hubs/{hub}/import fills a hub, and re-importing creates nothing new
+    - a new workspace's Features page offers to set up Orun QA's own hub, and doing so lists its features with confirmed links
+    - the qa-worker, api-edge, sdk and web-console-next lanes are green
+  gates: []

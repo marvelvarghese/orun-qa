@@ -19,7 +19,7 @@ spec:
         - "a workspace member opens the hub and sees every feature with its area, health and owner"
         - "the dependency map shows what each feature relies on and what breaks with it"
         - "Orun QA's own hub lists Orun QA's own features, mapped the same way"
-      tasks: [QA-2, QA-3, QA-4, QA-5, QA-6]
+      tasks: [QA-2, QA-3, QA-4, QA-5, QA-6, QA-7]
     - name: "QA2 — scenarios that run and record"
       exitCriteria:
         - "a scenario runs on stage in a real browser and its recording plays on the feature card"

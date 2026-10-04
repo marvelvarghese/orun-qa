@@ -24,7 +24,8 @@
     "./notifications": "./src/notifications.ts",
     "./integrations": "./src/integrations.ts",
     "./idempotency": "./src/idempotency.ts",
-    "./qa": "./src/qa.ts"
+    "./qa": "./src/qa.ts",
+    "./qa-self": "./src/qa-self.ts"
   },
   "scripts": {
     "build": "tsc --project tsconfig.build.json",

@@ -8,6 +8,7 @@ import { route } from "@qa-worker/router";
 import type { Env } from "@qa-worker/env";
 import { authorize } from "@saas/policy-engine";
 import { createQaRepository, type QaRepository } from "@saas/db/qa";
+import { ORUN_QA_SELF } from "@saas/contracts/qa-self";
 import type { AuthorizationRequest, MembershipFact, TenancyRole } from "@saas/contracts/policy";
 
 // The QA worker end to end: the real router and handlers, the real qa schema in a
@@ -258,6 +259,50 @@ describe("qa-worker", () => {
     await t.call("PATCH", `${base}/features/${ids["Activity feed"]}`, { status: "archived" });
     const page = await t.call("GET", `${base}/features/${ids["Archive a project"]}`);
     expect(page.data!.ripple.breaksDirectly).toEqual([ids["Task board"]]);
+  });
+
+  it("imports Orun QA's own manifest into a hub, idempotently, as the PM", async () => {
+    const t = await harness();
+    const { hubId } = await hubWithFeatures(t, []);
+    const path = `/v1/organizations/${ORG}/qa/hubs/${hubId}/import`;
+
+    const first = await t.call("POST", path, ORUN_QA_SELF);
+    expect(first.status).toBe(200);
+    expect(first.data!.result).toEqual({
+      areas: { created: ORUN_QA_SELF.areas.length, kept: 0 },
+      features: { created: ORUN_QA_SELF.features.length, updated: 0 },
+      edges: { created: ORUN_QA_SELF.edges.length, kept: 0 },
+    });
+    const map = await t.call("GET", `/v1/organizations/${ORG}/qa/hubs/${hubId}/map`);
+    expect(map.data!.features).toHaveLength(ORUN_QA_SELF.features.length);
+    expect(map.data!.edges).toHaveLength(ORUN_QA_SELF.edges.length);
+    expect(map.data!.edges.every((e: any) => e.confirmed)).toBe(true);
+    const insights = map.data!.features.find((f: any) => f.name === "Insights map");
+    expect(map.data!.areas.find((a: any) => a.id === insights.areaId)?.name).toBe("The feature map");
+
+    const again = await t.call("POST", path, ORUN_QA_SELF);
+    expect(again.data!.result).toEqual({
+      areas: { created: 0, kept: ORUN_QA_SELF.areas.length },
+      features: { created: 0, updated: ORUN_QA_SELF.features.length },
+      edges: { created: 0, kept: ORUN_QA_SELF.edges.length },
+    });
+    const after = await t.call("GET", `/v1/organizations/${ORG}/qa/hubs/${hubId}/map`);
+    expect(after.data!.features).toHaveLength(ORUN_QA_SELF.features.length);
+  });
+
+  it("refuses an import from a builder, and a manifest with an unknown edge writes nothing", async () => {
+    const t = await harness();
+    const { hubId } = await hubWithFeatures(t, []);
+    const path = `/v1/organizations/${ORG}/qa/hubs/${hubId}/import`;
+    t.state.role = "builder";
+    expect((await t.call("POST", path, ORUN_QA_SELF)).status).toBe(404);
+    t.state.role = "owner";
+    const bad = await t.call("POST", path, { areas: [], features: [{ name: "Only" }], edges: [{ from: "Only", to: "Missing" }] });
+    expect(bad.status).toBe(422);
+    const map = await t.call("GET", `/v1/organizations/${ORG}/qa/hubs/${hubId}/map`);
+    expect(map.data!.features).toHaveLength(0);
+    const dupe = await t.call("POST", path, { areas: [], features: [{ name: "A" }, { name: "a" }], edges: [] });
+    expect(dupe.status).toBe(422);
   });
 
   it("deletes an edge once", async () => {

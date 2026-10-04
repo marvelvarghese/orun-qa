@@ -138,3 +138,29 @@ export function computeRipple(featureId: string, edges: ReadonlyArray<Pick<Publi
 
   return { feature: featureId, reliesOn, breaksDirectly, breaksNext };
 }
+
+/**
+ * POST /v1/organizations/{org}/qa/hubs/{hub}/import — fill a hub from a manifest.
+ * Idempotent by name: areas and features that exist are updated in place, missing
+ * ones are created, edges that exist are left alone. Nothing is deleted.
+ */
+export interface FeatureManifest {
+  areas: { name: string; position?: number }[];
+  features: {
+    name: string;
+    description?: string;
+    area?: string | null;
+    codeRefs?: string[];
+    specLinks?: string[];
+  }[];
+  /** "to needs from", by feature name. */
+  edges: { from: string; to: string }[];
+}
+
+export interface ImportResult {
+  areas: { created: number; kept: number };
+  features: { created: number; updated: number };
+  edges: { created: number; kept: number };
+}
+
+export const MANIFEST_LIMITS = { areas: 50, features: 500, edges: 2000 } as const;

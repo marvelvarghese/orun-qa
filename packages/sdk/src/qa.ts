@@ -4,6 +4,8 @@ import type {
   CreateFeatureRequest,
   CreateHubRequest,
   FeatureMap,
+  FeatureManifest,
+  ImportResult,
   FeatureRipple,
   PublicArea,
   PublicFeature,
@@ -79,6 +81,11 @@ export class QaClient {
       { method: "PATCH", path: `${this.base(orgId, hubId)}/features/${encodeURIComponent(featureId)}`, body },
       opts,
     );
+  }
+
+  /** POST …/import — fill a hub from a manifest; idempotent by name. */
+  importManifest(orgId: string, hubId: string, body: FeatureManifest, opts: RequestOptions = {}): Promise<{ result: ImportResult }> {
+    return this.transport.request({ method: "POST", path: `${this.base(orgId, hubId)}/import`, body }, opts);
   }
 
   getMap(orgId: string, hubId: string, opts: RequestOptions = {}): Promise<FeatureMap> {
