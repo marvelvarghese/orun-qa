@@ -1,0 +1,71 @@
+// Rendered to wrangler.jsonc by tooling/wire/render.mjs (BF6 deploy-time wiring).
+// Resource IDs are NEVER committed: @@wiring(<component>/<env>:<key>)@@ tokens are
+// resolved from AWS Secrets Manager at deploy time (wire-live) or from the
+// committed wiring.fixture.json for offline dry-runs (wire-fixture).
+{
+  "name": "orun-qa-membership-worker",
+  "compatibility_date": "2025-05-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "main": "src/index.ts",
+  // Free plan caps a Worker at 3MB gzipped (10MB on paid) — minify fleet-wide
+  // so the ceiling is never the thing that blocks a deploy.
+  "minify": true,
+  "vars": {
+    "ENVIRONMENT": "local",
+    "DEBUG_DELIVERY": "true"
+  },
+  "env": {
+    "dev": {
+      "vars": {
+        "ENVIRONMENT": "dev",
+        "DEBUG_DELIVERY": "true"
+      }
+    },
+    "stage": {
+      "workers_dev": false,
+      "vars": {
+        "ENVIRONMENT": "stage",
+        "DEBUG_DELIVERY": "true"
+      },
+      "hyperdrive": [
+        {
+          "binding": "PLATFORM_DB",
+          "id": "@@wiring(cloudflare-hyperdrive/stage:hyperdrive_id)@@"
+        }
+      ],
+      "services": [
+        {
+          "binding": "POLICY_WORKER",
+          "service": "orun-qa-policy-worker-stage"
+        },
+        {
+          "binding": "BILLING_WORKER",
+          "service": "orun-qa-billing-worker-stage"
+        }// @cycle-break:membership-worker->notifications-worker:LAogICAgICAgIHsKICAgICAgICAgICJiaW5kaW5nIjogIk5PVElGSUNBVElPTlNfV09SS0VSIiwKICAgICAgICAgICJzZXJ2aWNlIjogIm9ydW4tcWEtbm90aWZpY2F0aW9ucy13b3JrZXItc3RhZ2UiCiAgICAgICAgfQ==
+      ]
+    },
+    "prod": {
+      "workers_dev": false,
+      "vars": {
+        "ENVIRONMENT": "prod",
+        "DEBUG_DELIVERY": "false"
+      },
+      "hyperdrive": [
+        {
+          "binding": "PLATFORM_DB",
+          "id": "@@wiring(cloudflare-hyperdrive/prod:hyperdrive_id)@@"
+        }
+      ],
+      "services": [
+        {
+          "binding": "POLICY_WORKER",
+          "service": "orun-qa-policy-worker-prod"
+        },
+        {
+          "binding": "BILLING_WORKER",
+          "service": "orun-qa-billing-worker-prod"
+        }// @cycle-break:membership-worker->notifications-worker:LAogICAgICAgIHsKICAgICAgICAgICJiaW5kaW5nIjogIk5PVElGSUNBVElPTlNfV09SS0VSIiwKICAgICAgICAgICJzZXJ2aWNlIjogIm9ydW4tcWEtbm90aWZpY2F0aW9ucy13b3JrZXItcHJvZCIKICAgICAgICB9
+      ]
+    }
+  }
+}
