@@ -14,9 +14,25 @@ import { useSession } from "@/lib/session";
 import { useApiQuery, qk } from "@/lib/query";
 import { wrap } from "@/lib/api";
 
-// Orun QA's own deployment — the addresses its scenarios will run against.
-const ORUN_QA_STAGE_URL = "https://orun-qa-web-console-next-stage.rahulvarghesepullely.workers.dev";
-const ORUN_QA_PROD_URL = "https://orun-qa-web-console-next-prod.rahulvarghesepullely.workers.dev";
+/**
+ * The addresses Orun QA's own scenarios run against: the console this hub is set
+ * up from, on stage or prod. Set NEXT_PUBLIC_QA_SELF_STAGE_URL / _PROD_URL to
+ * override; otherwise the current origin fills the slot its name suggests.
+ */
+function selfAddresses(): { stageUrl: string | null; prodUrl: string | null } {
+  const origin = typeof window === "undefined" ? null : window.location.origin;
+  const stage = process.env.NEXT_PUBLIC_QA_SELF_STAGE_URL || (origin && /stage/i.test(origin) ? origin : null);
+  const prod = process.env.NEXT_PUBLIC_QA_SELF_PROD_URL || (origin && /prod/i.test(origin) ? origin : null);
+  return { stageUrl: stage, prodUrl: prod };
+}
+
+/** Create Orun QA's own hub, or reuse it if an earlier attempt got that far, then import its manifest. */
+export async function setUpSelfHub(client: ReturnType<typeof useSession>["client"], orgId: string): Promise<{ hubId: string; created: number }> {
+  const { hubs } = await client.qa.listHubs(orgId);
+  const hub = hubs.find((h) => h.slug === "orun-qa") ?? (await client.qa.createHub(orgId, { name: "Orun QA", slug: "orun-qa", ...selfAddresses() })).hub;
+  const { result } = await client.qa.importManifest(orgId, hub.id, ORUN_QA_SELF);
+  return { hubId: hub.id, created: result.features.created };
+}
 
 const hubSchema = z.object({
   name: z.string().min(2).max(120),
@@ -61,18 +77,15 @@ export function HubScope({ orgId, children }: { orgId: string; children: (hub: P
 
   const setUpSelf = async () => {
     setBusy(true);
-    const r = await wrap(async () => {
-      const { hub } = await client.qa.createHub(orgId, { name: "Orun QA", slug: "orun-qa", stageUrl: ORUN_QA_STAGE_URL, prodUrl: ORUN_QA_PROD_URL });
-      const { result } = await client.qa.importManifest(orgId, hub.id, ORUN_QA_SELF);
-      return result;
-    });
+    const r = await wrap(() => setUpSelfHub(client, orgId));
     setBusy(false);
+    // Reload either way: a hub created before a failed import must still appear.
+    hubs.reload();
     if (!r.ok) {
       toast({ kind: "error", title: "Could not set up the hub", description: r.error.code === "not_found" ? "Only a workspace owner or admin can set up a hub." : r.error.message });
       return;
     }
-    toast({ kind: "success", title: `Orun QA now tests itself · ${r.data.features.created} features` });
-    hubs.reload();
+    toast({ kind: "success", title: `Orun QA now tests itself · ${r.data.created} features` });
   };
 
   return (

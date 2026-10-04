@@ -141,8 +141,11 @@ export function computeRipple(featureId: string, edges: ReadonlyArray<Pick<Publi
 
 /**
  * POST /v1/organizations/{org}/qa/hubs/{hub}/import — fill a hub from a manifest.
- * Idempotent by name: areas and features that exist are updated in place, missing
- * ones are created, edges that exist are left alone. Nothing is deleted.
+ * Idempotent by name. Areas: missing ones are created, existing ones are kept as
+ * they are. Features: missing ones are created; existing ones are updated only in
+ * the fields the manifest gives, and only when something differs. Edges: missing
+ * ones are created confirmed; an existing unconfirmed one is confirmed. Nothing is
+ * deleted. A feature's `area` may name an area in the manifest or one the hub has.
  */
 export interface FeatureManifest {
   areas: { name: string; position?: number }[];
@@ -159,8 +162,9 @@ export interface FeatureManifest {
 
 export interface ImportResult {
   areas: { created: number; kept: number };
-  features: { created: number; updated: number };
-  edges: { created: number; kept: number };
+  features: { created: number; updated: number; kept: number };
+  edges: { created: number; confirmed: number; kept: number };
 }
 
-export const MANIFEST_LIMITS = { areas: 50, features: 500, edges: 2000 } as const;
+/** Sized so one request finishes comfortably; split larger product maps across imports. */
+export const MANIFEST_LIMITS = { areas: 30, features: 100, edges: 300 } as const;

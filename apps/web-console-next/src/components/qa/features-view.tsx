@@ -39,11 +39,13 @@ export interface FeaturesViewProps {
   planHref: string;
   testsHref: string;
   onAddFeature?: () => void;
+  /** On Orun QA's own hub, a way to (re)load its features from the manifest. */
+  onImportSelf?: (() => void) | undefined;
   /** Scenarios arrive in QA2; until then the console hides "Add a scenario". */
   showAddScenario?: boolean;
 }
 
-export function FeaturesView({ productName, features, areas, needsYou, lastCheck, featureHref, planHref, testsHref, onAddFeature, showAddScenario = false }: FeaturesViewProps) {
+export function FeaturesView({ productName, features, areas, needsYou, lastCheck, featureHref, planHref, testsHref, onAddFeature, onImportSelf, showAddScenario = false }: FeaturesViewProps) {
   const [filter, setFilter] = React.useState<FeatureHealth | "all">("all");
   const [query, setQuery] = React.useState("");
 
@@ -150,11 +152,18 @@ export function FeaturesView({ productName, features, areas, needsYou, lastCheck
           <p className="muted" style={{ margin: "0 0 16px" }}>
             Add the things a customer can do. Each one gets scenarios, a recording, and its place on the map.
           </p>
-          {onAddFeature && (
-            <button type="button" className="btn primary" onClick={onAddFeature}>
-              Add a feature
-            </button>
-          )}
+          <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
+            {onImportSelf && (
+              <button type="button" className="btn gold" onClick={onImportSelf}>
+                Import Orun QA&rsquo;s own features
+              </button>
+            )}
+            {onAddFeature && (
+              <button type="button" className="btn primary" onClick={onAddFeature}>
+                Add a feature
+              </button>
+            )}
+          </div>
         </div>
       ) : shown.length === 0 ? (
         <p className="muted">No feature matches.</p>

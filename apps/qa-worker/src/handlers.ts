@@ -501,7 +501,11 @@ function parseManifest(body: Record<string, unknown>): { ok: true; value: Parsed
   const areas = list("areas", MANIFEST_LIMITS.areas).map((a, i) => {
     const f: Fields = {};
     const name = str(f, a, "name", { required: true, max: QA_LIMITS.nameMax });
-    const position = typeof a.position === "number" && Number.isInteger(a.position) && a.position >= 0 && a.position <= QA_LIMITS.positionMax ? a.position : i;
+    let position = i;
+    if (a.position !== undefined) {
+      if (typeof a.position === "number" && Number.isInteger(a.position) && a.position >= 0 && a.position <= QA_LIMITS.positionMax) position = a.position;
+      else (f.position ??= []).push(`A whole number from 0 to ${QA_LIMITS.positionMax}`);
+    }
     if (Object.keys(f).length > 0) fields[`areas.${i}`] = Object.values(f).flat();
     return { name: name ?? "", position };
   });
@@ -510,6 +514,7 @@ function parseManifest(body: Record<string, unknown>): { ok: true; value: Parsed
     const name = str(f, x, "name", { required: true, max: QA_LIMITS.nameMax });
     const description = str(f, x, "description", { max: QA_LIMITS.descriptionMax });
     const area = x.area === null ? null : str(f, x, "area", { max: QA_LIMITS.nameMax });
+    if (area === "") (f.area ??= []).push("Give an area name, or null for no area");
     const codeRefs = strList(f, x, "codeRefs");
     const specLinks = strList(f, x, "specLinks");
     if (Object.keys(f).length > 0) fields[`features.${i}`] = Object.values(f).flat();
@@ -529,10 +534,6 @@ function parseManifest(body: Record<string, unknown>): { ok: true; value: Parsed
   if (da) fields.areas = [...(fields.areas ?? []), `Area "${da}" appears twice`];
   const df = dupe(features.map((f) => f.name));
   if (df) fields.features = [...(fields.features ?? []), `Feature "${df}" appears twice`];
-  const areaNames = new Set(areas.map((a) => lower(a.name)));
-  features.forEach((f, i) => {
-    if (f.area && !areaNames.has(lower(f.area))) fields[`features.${i}`] = [...(fields[`features.${i}`] ?? []), `Area "${f.area}" is not in the manifest`];
-  });
   return Object.keys(fields).length > 0 ? { ok: false, fields } : { ok: true, value: { areas, features, edges } };
 }
 
@@ -560,8 +561,12 @@ export async function importManifest(ctx: Ctx, hubId: string, request: Request):
     const known = new Set([...featuresNow.value.map((f) => lower(f.name)), ...m.features.map((f) => lower(f.name))]);
     const unknown = m.edges.flatMap((e) => [e.from, e.to]).filter((n) => !known.has(lower(n)));
     if (unknown.length > 0) return validationError(ctx.requestId, { edges: [`Unknown feature "${unknown[0]}"`] });
+    // A feature may name an area from the manifest or one the hub already has.
+    const knownAreas = new Set([...areasNow.value.map((a) => lower(a.name)), ...m.areas.map((a) => lower(a.name))]);
+    const badArea = m.features.find((f) => f.area && !knownAreas.has(lower(f.area)));
+    if (badArea) return validationError(ctx.requestId, { features: [`Area "${badArea.area}" is neither in the manifest nor in the hub`] });
 
-    const result: ImportResult = { areas: { created: 0, kept: 0 }, features: { created: 0, updated: 0 }, edges: { created: 0, kept: 0 } };
+    const result: ImportResult = { areas: { created: 0, kept: 0 }, features: { created: 0, updated: 0, kept: 0 }, edges: { created: 0, confirmed: 0, kept: 0 } };
     const at = now(ctx);
 
     const areaId = new Map(areasNow.value.map((a) => [lower(a.name), a.id]));
@@ -577,17 +582,26 @@ export async function importManifest(ctx: Ctx, hubId: string, request: Request):
     }
 
     const featureId = new Map(featuresNow.value.map((f) => [lower(f.name), f.id]));
+    const featureNow = new Map(featuresNow.value.map((f) => [f.id, f]));
+    const same = (a: string[], b: string[]) => a.length === b.length && a.every((x, i) => x === b[i]);
     for (const f of m.features) {
       const area = f.area === undefined ? undefined : f.area === null ? null : (areaId.get(lower(f.area)) ?? null);
       const existing = featureId.get(lower(f.name));
       if (existing) {
-        const r = await repo.updateFeature(ctx.orgId, hubId, existing, {
-          ...(f.description !== undefined ? { description: f.description } : {}),
-          ...(area !== undefined ? { areaId: area } : {}),
-          ...(f.codeRefs !== undefined ? { codeRefs: f.codeRefs } : {}),
-          ...(f.specLinks !== undefined ? { specLinks: f.specLinks } : {}),
-          updatedAt: at,
-        });
+        // Write only what the manifest gives, and only when it differs — so a
+        // re-import is cheap and `updated` counts real changes.
+        const cur = featureNow.get(existing)!;
+        const patch = {
+          ...(f.description !== undefined && f.description !== cur.description ? { description: f.description } : {}),
+          ...(area !== undefined && area !== cur.areaId ? { areaId: area } : {}),
+          ...(f.codeRefs !== undefined && !same(f.codeRefs, cur.codeRefs) ? { codeRefs: f.codeRefs } : {}),
+          ...(f.specLinks !== undefined && !same(f.specLinks, cur.specLinks) ? { specLinks: f.specLinks } : {}),
+        };
+        if (Object.keys(patch).length === 0) {
+          result.features.kept++;
+          continue;
+        }
+        const r = await repo.updateFeature(ctx.orgId, hubId, existing, { ...patch, updatedAt: at });
         if (!r.ok) return fromRepoError(r.error, ctx.requestId);
         result.features.updated++;
         continue;
@@ -611,18 +625,26 @@ export async function importManifest(ctx: Ctx, hubId: string, request: Request):
       result.features.created++;
     }
 
-    const pairs = new Set(edgesNow.value.map((e) => `${e.fromFeatureId}>${e.toFeatureId}`));
+    const pairs = new Map(edgesNow.value.map((e) => [`${e.fromFeatureId}>${e.toFeatureId}`, e]));
     for (const e of m.edges) {
       const from = featureId.get(lower(e.from))!;
       const to = featureId.get(lower(e.to))!;
-      if (pairs.has(`${from}>${to}`)) {
-        result.edges.kept++;
+      const existingEdge = pairs.get(`${from}>${to}`);
+      if (existingEdge) {
+        // The PM importing a link that QA or the agent proposed confirms it.
+        if (existingEdge.confirmedAt === null) {
+          const r = await repo.confirmEdge(ctx.orgId, hubId, existingEdge.id, ctx.actor.subjectId, at);
+          if (!r.ok) return fromRepoError(r.error, ctx.requestId);
+          result.edges.confirmed++;
+        } else {
+          result.edges.kept++;
+        }
         continue;
       }
       // The importer is the PM (qa.feature.write), so the edges arrive confirmed.
       const r = await repo.createEdge({ id: nextId(ctx), orgId: ctx.orgId, hubId, fromFeatureId: from, toFeatureId: to, source: "human", confirmedBy: ctx.actor.subjectId, createdAt: at });
       if (!r.ok) return fromRepoError(r.error, ctx.requestId);
-      pairs.add(`${from}>${to}`);
+      pairs.set(`${from}>${to}`, r.value);
       result.edges.created++;
     }
 

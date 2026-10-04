@@ -270,8 +270,8 @@ describe("qa-worker", () => {
     expect(first.status).toBe(200);
     expect(first.data!.result).toEqual({
       areas: { created: ORUN_QA_SELF.areas.length, kept: 0 },
-      features: { created: ORUN_QA_SELF.features.length, updated: 0 },
-      edges: { created: ORUN_QA_SELF.edges.length, kept: 0 },
+      features: { created: ORUN_QA_SELF.features.length, updated: 0, kept: 0 },
+      edges: { created: ORUN_QA_SELF.edges.length, confirmed: 0, kept: 0 },
     });
     const map = await t.call("GET", `/v1/organizations/${ORG}/qa/hubs/${hubId}/map`);
     expect(map.data!.features).toHaveLength(ORUN_QA_SELF.features.length);
@@ -283,11 +283,40 @@ describe("qa-worker", () => {
     const again = await t.call("POST", path, ORUN_QA_SELF);
     expect(again.data!.result).toEqual({
       areas: { created: 0, kept: ORUN_QA_SELF.areas.length },
-      features: { created: 0, updated: ORUN_QA_SELF.features.length },
-      edges: { created: 0, kept: ORUN_QA_SELF.edges.length },
+      features: { created: 0, updated: 0, kept: ORUN_QA_SELF.features.length },
+      edges: { created: 0, confirmed: 0, kept: ORUN_QA_SELF.edges.length },
     });
     const after = await t.call("GET", `/v1/organizations/${ORG}/qa/hubs/${hubId}/map`);
     expect(after.data!.features).toHaveLength(ORUN_QA_SELF.features.length);
+  });
+
+  it("confirms a link QA proposed, reuses the hub's areas, and changes only what differs", async () => {
+    const t = await harness();
+    const { hubId, ids } = await hubWithFeatures(t, ["A", "B"]);
+    const base = `/v1/organizations/${ORG}/qa/hubs/${hubId}`;
+    await t.call("POST", `${base}/areas`, { name: "Existing" });
+    t.state.role = "builder";
+    const proposed = await t.call("POST", `${base}/edges`, { from: ids.A, to: ids.B });
+    expect(proposed.data!.edge.confirmed).toBe(false);
+    t.state.role = "owner";
+    const r = await t.call("POST", `${base}/import`, {
+      areas: [],
+      features: [{ name: "A", area: "Existing" }, { name: "B" }],
+      edges: [{ from: "A", to: "B" }],
+    });
+    expect(r.status).toBe(200);
+    expect(r.data!.result).toEqual({ areas: { created: 0, kept: 0 }, features: { created: 0, updated: 1, kept: 1 }, edges: { created: 0, confirmed: 1, kept: 0 } });
+    const map = await t.call("GET", `${base}/map`);
+    expect(map.data!.edges[0].confirmed).toBe(true);
+  });
+
+  it("refuses an empty area name, a bad position, and an area that exists nowhere", async () => {
+    const t = await harness();
+    const { hubId } = await hubWithFeatures(t, []);
+    const path = `/v1/organizations/${ORG}/qa/hubs/${hubId}/import`;
+    expect((await t.call("POST", path, { areas: [], features: [{ name: "X", area: "" }], edges: [] })).status).toBe(422);
+    expect((await t.call("POST", path, { areas: [{ name: "Big", position: -1 }], features: [], edges: [] })).status).toBe(422);
+    expect((await t.call("POST", path, { areas: [], features: [{ name: "X", area: "Nowhere" }], edges: [] })).status).toBe(422);
   });
 
   it("refuses an import from a builder, and a manifest with an unknown edge writes nothing", async () => {
