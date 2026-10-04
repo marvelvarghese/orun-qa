@@ -57,6 +57,11 @@ const ORG_ROLE_PERMISSIONS: Record<OrganizationRole, readonly string[]> = {
     "organization.integration.manage",
     "organization.integration.token.issue",
     "project.repo_link.write",
+    "qa.hub.read",
+    "qa.hub.manage",
+    "qa.feature.read",
+    "qa.feature.write",
+    "qa.map.write",
   ],
   admin: [
     "organization.read",
@@ -98,6 +103,11 @@ const ORG_ROLE_PERMISSIONS: Record<OrganizationRole, readonly string[]> = {
     "organization.integration.manage",
     "organization.integration.token.issue",
     "project.repo_link.write",
+    "qa.hub.read",
+    "qa.hub.manage",
+    "qa.feature.read",
+    "qa.feature.write",
+    "qa.map.write",
   ],
   builder: [
     "organization.read",
@@ -114,6 +124,9 @@ const ORG_ROLE_PERMISSIONS: Record<OrganizationRole, readonly string[]> = {
     "project.webhook.read",
     "organization.metering.read",
     "organization.integration.read",
+    "qa.hub.read",
+    "qa.feature.read",
+    "qa.map.write",
   ],
   viewer: [
     "organization.read",
@@ -126,6 +139,8 @@ const ORG_ROLE_PERMISSIONS: Record<OrganizationRole, readonly string[]> = {
     "project.webhook.read",
     "organization.metering.read",
     "organization.integration.read",
+    "qa.hub.read",
+    "qa.feature.read",
   ],
   billing_admin: [
     "organization.read",
@@ -247,6 +262,11 @@ const ALL_KNOWN_ACTIONS: ReadonlySet<string> = new Set([
   "organization.integration.manage",
   "organization.integration.token.issue",
   "project.repo_link.write",
+  "qa.hub.read",
+  "qa.hub.manage",
+  "qa.feature.read",
+  "qa.feature.write",
+  "qa.map.write",
 ]);
 
 function isOrgRole(role: string): role is OrganizationRole {

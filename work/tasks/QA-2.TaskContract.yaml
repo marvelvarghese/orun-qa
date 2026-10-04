@@ -1,0 +1,22 @@
+apiVersion: orun.io/v1
+kind: TaskContract
+metadata:
+  name: QA-2
+spec:
+  goal: The feature map exists as a resource — hubs, areas, features and dependency edges are stored in the qa schema, served by a new qa-worker behind the API edge, and authorized by role — so the console (QA-3) and the Orunbase seed (QA-4) have something to read and write.
+  affects:
+    - default/orun-qa/qa-worker
+    - default/orun-qa/qa-worker-tests
+    - default/orun-qa/api-edge
+    - default/orun-qa/db
+    - default/orun-qa/db-migrate
+    - default/orun-qa/db-tests
+    - default/orun-qa/contracts
+    - default/orun-qa/policy-engine
+    - default/orun-qa/policy-engine-tests
+  doneWhen:
+    - migration 200_qa_feature_map is applied on stage and prod
+    - orun-qa-qa-worker answers /health on stage and prod
+    - GET /v1/organizations/{org}/qa/hubs answers through the API edge for a member, and 404 for a non-member
+    - the qa-worker, db, policy-engine and api-edge test lanes are green
+  gates: []

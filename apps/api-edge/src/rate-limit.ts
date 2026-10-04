@@ -57,7 +57,8 @@ export type RouteFamily =
   | "billing"
   | "audit"
   | "notifications"
-  | "integrations";
+  | "integrations"
+  | "qa";
 
 interface BucketLimits {
   /** Bucket capacity (max tokens). */
@@ -89,6 +90,11 @@ const LIMITS: Record<RouteFamily, FamilyConfig> = {
     org: { limit: 300, windowSec: 60 },
   },
   project: {
+    identity: { limit: 60, windowSec: 60 },
+    org: { limit: 300, windowSec: 60 },
+  },
+  // Orun QA: the same budget as projects — interactive console reads and edits.
+  qa: {
     identity: { limit: 60, windowSec: 60 },
     org: { limit: 300, windowSec: 60 },
   },

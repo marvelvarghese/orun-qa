@@ -120,6 +120,11 @@ export const ORGANIZATION_ACTIONS = [
   "project.config.write",
   "project.webhook.read",
   "project.webhook.write",
+  "qa.hub.read",
+  "qa.hub.manage",
+  "qa.feature.read",
+  "qa.feature.write",
+  "qa.map.write",
 ] as const;
 
 export type OrganizationAction = (typeof ORGANIZATION_ACTIONS)[number];
