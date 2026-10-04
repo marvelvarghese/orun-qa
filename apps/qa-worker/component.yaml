@@ -1,8 +1,8 @@
 apiVersion: sourceplane.io/v1
 kind: Component
 metadata:
-  name: api-edge
-  description: Cloudflare Worker for the API edge Runtime
+  name: qa-worker
+  description: "Cloudflare Worker for the Orun QA feature map (QA1) — hubs, areas, features, dependency edges"
 spec:
   docs:
     overview: docs/overview.md
@@ -13,21 +13,10 @@ spec:
   lifecycle: production
   owner: platform
   domain: starter-runtime
-  path: apps/api-edge
+  path: apps/qa-worker
   dependsOn:
-    - component: cloudflare-hyperdrive
-    - component: cloudflare-kv
-    - component: projects-worker
-    - component: events-worker
-    - component: config-worker
-    - component: webhooks-worker
-    - component: billing-worker
-    - component: integrations-worker
-    - component: identity-worker
     - component: membership-worker
-    - component: metering-worker
-    - component: notifications-worker
-    - component: qa-worker
+    - component: policy-worker
     # Shared workspace packages this component BUNDLES. Declared so a change
     # to one marks this component changed and redeploys it — without the
     # edge, `orun plan --changed` keys on `path:` alone and a worker can run
@@ -46,8 +35,6 @@ spec:
         secretEnv:
           WIRING_CLOUDFLARE_HYPERDRIVE_STAGE: "secret://ws_AHTMNGG1/orun-qa/stage/WIRING_CLOUDFLARE_HYPERDRIVE"
           WIRING_CLOUDFLARE_HYPERDRIVE_PROD: "secret://ws_AHTMNGG1/orun-qa/prod/WIRING_CLOUDFLARE_HYPERDRIVE"
-          WIRING_CLOUDFLARE_KV_STAGE: "secret://ws_AHTMNGG1/orun-qa/stage/WIRING_CLOUDFLARE_KV"
-          WIRING_CLOUDFLARE_KV_PROD: "secret://ws_AHTMNGG1/orun-qa/prod/WIRING_CLOUDFLARE_KV"
         profileRules:
           - profile: deploy
             when:
@@ -60,8 +47,6 @@ spec:
         secretEnv:
           WIRING_CLOUDFLARE_HYPERDRIVE_STAGE: "secret://ws_AHTMNGG1/orun-qa/stage/WIRING_CLOUDFLARE_HYPERDRIVE"
           WIRING_CLOUDFLARE_HYPERDRIVE_PROD: "secret://ws_AHTMNGG1/orun-qa/prod/WIRING_CLOUDFLARE_HYPERDRIVE"
-          WIRING_CLOUDFLARE_KV_STAGE: "secret://ws_AHTMNGG1/orun-qa/stage/WIRING_CLOUDFLARE_KV"
-          WIRING_CLOUDFLARE_KV_PROD: "secret://ws_AHTMNGG1/orun-qa/prod/WIRING_CLOUDFLARE_KV"
         profileRules:
           - profile: deploy
             when:
@@ -69,39 +54,31 @@ spec:
   parameters:
     nodeVersion: "22"
     pnpmVersion: "10.12.1"
-
     workspaceDir: ../..
     appDir: .
-
-    turboFilter: "@saas/api-edge"
-    wranglerConfig: wrangler.jsonc
-
-    # BF6 deploy-time wiring (pilot): wrangler.jsonc is rendered, never
-    # committed. Verify lanes render from wiring.fixture.json (offline);
-    # deploy lanes resolve real IDs from the Secrets Manager wiring manifest
-    # published by the named infra components (BF5).
-    wranglerTemplate: wrangler.template.jsonc
-    wiringComponents: "cloudflare-hyperdrive,cloudflare-kv"
-    wiringEnvs: "stage,prod"
-    wiringFixture: wiring.fixture.json
+    # BF6b: deploy-time wiring — wrangler.jsonc is rendered, never committed.
+    # Verify lanes render from wiring.fixture.json (offline); deploy lanes
+    # resolve real IDs from the Secrets Manager wiring manifest (BF5).
     orgName: sourceplane
     owner: sourceplane
     repo: orun-qa
 
+    turboFilter: "@saas/qa-worker"
+    wranglerConfig: wrangler.jsonc
+    wranglerTemplate: wrangler.template.jsonc
+    wiringComponents: "cloudflare-hyperdrive"
+    wiringEnvs: "stage,prod"
+    wiringFixture: wiring.fixture.json
     installCommand: pnpm install --frozen-lockfile
-    buildCommand: pnpm exec turbo run build --filter=@saas/api-edge
-    typecheckCommand: pnpm exec turbo run typecheck --filter=@saas/api-edge
-
+    buildCommand: pnpm exec turbo run build --filter=@saas/qa-worker
+    typecheckCommand: pnpm exec turbo run typecheck --filter=@saas/qa-worker
     dryRunCommand: pnpm exec wrangler deploy --dry-run --config wrangler.jsonc --env prod
     deployCommand: pnpm exec wrangler deploy --config wrangler.jsonc --env prod
-
     preDeployCommand: "echo 'No pre-deploy step configured.'"
     migrationCommand: "echo 'No migrations configured.'"
     smokeCommand: "echo 'No smoke test configured.'"
   labels:
     team: platform
     layer: runtime
-    surface: api
+    surface: qa
     runtime: cloudflare
-# ci: re-trigger deploy (batch C — integrations + api-edge gateway, 20260622T141448Z)
-# ci: re-trigger deploy (batch C — integrations + api-edge gateway, 20260622T141448Z)

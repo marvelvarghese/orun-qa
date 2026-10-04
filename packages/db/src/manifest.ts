@@ -183,5 +183,14 @@ export const manifest: MigrationManifest = {
       description:
         "Connection pointer on the inbound-delivery inbox (nullable connection_id + partial index) — lets the per-connection delivery log scope precisely; attributed by the IG2 cron drain",
     },
+    {
+      id: "200_qa_feature_map",
+      context: "qa",
+      path: "200_qa_feature_map/up.sql",
+      checksum:
+        "c08b56bc14efcc3e4aa3d48e90c40e3a6096105786aa81cfd969d8f3a5539bb5",
+      description:
+        "Orun QA feature map — the qa schema: hubs, areas, features and the dependency edges between them (QA1)",
+    },
   ],
 };
