@@ -1,0 +1,16 @@
+apiVersion: orun.io/v1
+kind: TaskContract
+metadata:
+  name: QA-3
+spec:
+  goal: A PM sees the feature map in the console — the Features home grouped by area with health, a page per feature with what it relies on and what breaks with it, and an Insights map they can click and add links to — reading and writing the QA-2 resource through the SDK.
+  affects:
+    - default/orun-qa/web-console-next
+    - default/orun-qa/web-console-next-tests
+    - default/orun-qa/sdk
+  doneWhen:
+    - Features and Insights appear in the console's sidebar on stage and prod
+    - a PM creates a hub and a feature on stage and sees it on the Features home
+    - linking two features on Insights shows the ripple on both feature pages
+    - the web-console-next, sdk and web-console-next-tests lanes are green
+  gates: []

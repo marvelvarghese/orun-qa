@@ -24,6 +24,8 @@ import {
   User2,
   Plug,
   GitBranch,
+  LayoutGrid,
+  Network,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -34,6 +36,8 @@ import { SidebarOrgSwitcher } from "./sidebar-org-switcher";
 import { SidebarFind } from "./sidebar-find";
 
 const ICONS: Record<string, LucideIcon> = {
+  LayoutGrid,
+  Network,
   Building2,
   FolderKanban,
   Boxes,
