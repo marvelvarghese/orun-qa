@@ -4,7 +4,7 @@ import * as React from "react";
 import { useParams } from "next/navigation";
 import { z } from "zod";
 import { OrgScope } from "@/components/shell/org-scope";
-import { HubScope, qaHref } from "@/components/qa/hub-scope";
+import { HubScope, qaHref, setUpSelfHub } from "@/components/qa/hub-scope";
 import { FeaturesView } from "@/components/qa/features-view";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -26,18 +26,19 @@ export default function FeaturesPage() {
     <OrgScope slug={slug}>
       {(org) => (
         <HubScope orgId={org.id}>
-          {(hub) => <Inner orgId={org.id} orgSlug={org.slug} hubId={hub.id} hubName={hub.name} />}
+          {(hub) => <Inner orgId={org.id} orgSlug={org.slug} hubId={hub.id} hubName={hub.name} hubSlug={hub.slug} />}
         </HubScope>
       )}
     </OrgScope>
   );
 }
 
-function Inner({ orgId, orgSlug, hubId, hubName }: { orgId: string; orgSlug: string; hubId: string; hubName: string }) {
+function Inner({ orgId, orgSlug, hubId, hubName, hubSlug }: { orgId: string; orgSlug: string; hubId: string; hubName: string; hubSlug: string }) {
   const { client } = useSession();
   const { toast } = useToast();
   const map = useApiQuery(qk.qaMap(orgId, hubId), () => wrap(() => client.qa.getMap(orgId, hubId)));
   const [open, setOpen] = React.useState(false);
+  const [importing, setImporting] = React.useState(false);
 
   return (
     <>
@@ -76,6 +77,20 @@ function Inner({ orgId, orgSlug, hubId, hubName }: { orgId: string; orgSlug: str
           planHref={qaHref(orgSlug, "plan", hubId)}
           testsHref={qaHref(orgSlug, "tests", hubId)}
           onAddFeature={() => setOpen(true)}
+          onImportSelf={
+            hubSlug === "orun-qa"
+              ? async () => {
+                  if (importing) return;
+                  setImporting(true);
+                  const r = await wrap(() => setUpSelfHub(client, orgId));
+                  setImporting(false);
+                  map.reload();
+                  if (!r.ok) toast({ kind: "error", title: "Import failed", description: r.error.message });
+                  else toast({ kind: "success", title: `Imported · ${r.data.created} new features` });
+                }
+              : undefined
+          }
+          importing={importing}
         />
       )}
       <Dialog open={open} onOpenChange={setOpen}>

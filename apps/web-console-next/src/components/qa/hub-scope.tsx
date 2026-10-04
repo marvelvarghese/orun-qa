@@ -3,9 +3,8 @@
 import * as React from "react";
 import { useSearchParams } from "next/navigation";
 import { z } from "zod";
-import { LayoutGrid } from "lucide-react";
 import type { PublicHub } from "@saas/contracts/qa";
-import { EmptyState } from "@/components/ui/empty-state";
+import { ORUN_QA_SELF } from "@saas/contracts/qa-self";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -14,6 +13,26 @@ import { useToast } from "@/components/ui/toast";
 import { useSession } from "@/lib/session";
 import { useApiQuery, qk } from "@/lib/query";
 import { wrap } from "@/lib/api";
+
+/**
+ * The addresses Orun QA's own scenarios run against, from build configuration
+ * (NEXT_PUBLIC_QA_SELF_STAGE_URL / _PROD_URL). Unset, the hub starts without
+ * them and the PM adds them in the hub's settings.
+ */
+function selfAddresses(): { stageUrl: string | null; prodUrl: string | null } {
+  return {
+    stageUrl: process.env.NEXT_PUBLIC_QA_SELF_STAGE_URL || null,
+    prodUrl: process.env.NEXT_PUBLIC_QA_SELF_PROD_URL || null,
+  };
+}
+
+/** Create Orun QA's own hub, or reuse it if an earlier attempt got that far, then import its manifest. */
+export async function setUpSelfHub(client: ReturnType<typeof useSession>["client"], orgId: string): Promise<{ hubId: string; created: number }> {
+  const { hubs } = await client.qa.listHubs(orgId);
+  const hub = hubs.find((h) => h.slug === "orun-qa") ?? (await client.qa.createHub(orgId, { name: "Orun QA", slug: "orun-qa", ...selfAddresses() })).hub;
+  const { result } = await client.qa.importManifest(orgId, hub.id, ORUN_QA_SELF);
+  return { hubId: hub.id, created: result.features.created };
+}
 
 const hubSchema = z.object({
   name: z.string().min(2).max(120),
@@ -31,6 +50,7 @@ export function HubScope({ orgId, children }: { orgId: string; children: (hub: P
   const { toast } = useToast();
   const hubs = useApiQuery(qk.qaHubs(orgId), () => wrap(async () => (await client.qa.listHubs(orgId)).hubs));
   const [open, setOpen] = React.useState(false);
+  const [busy, setBusy] = React.useState(false);
   const wanted = useSearchParams()?.get("hub") ?? null;
 
   if (hubs.loading) {
@@ -55,14 +75,62 @@ export function HubScope({ orgId, children }: { orgId: string; children: (hub: P
   const hub = list.find((h) => h.id === wanted) ?? list[0];
   if (hub) return <>{children(hub, list)}</>;
 
+  const setUpSelf = async () => {
+    setBusy(true);
+    const r = await wrap(() => setUpSelfHub(client, orgId));
+    setBusy(false);
+    // Reload either way: a hub created before a failed import must still appear.
+    hubs.reload();
+    if (!r.ok) {
+      toast({ kind: "error", title: "Could not set up the hub", description: r.error.code === "not_found" ? "Only a workspace owner or admin can set up a hub." : r.error.message });
+      return;
+    }
+    toast({ kind: "success", title: `Orun QA now tests itself · ${r.data.created} features` });
+  };
+
   return (
     <>
-      <EmptyState
-        icon={LayoutGrid}
-        title="Set up your product"
-        description="A hub holds every feature of one product, the scenarios that prove each works, and how they depend on each other."
-        primaryAction={{ label: "Create hub", onClick: () => setOpen(true) }}
-      />
+      <div className="qa">
+        <div className="eyebrow">Get started</div>
+        <h1 className="serif" style={{ margin: "6px 0 8px", fontSize: 40, fontWeight: 500, lineHeight: 1.15 }}>
+          Set up your product
+        </h1>
+        <p className="muted" style={{ margin: "0 0 24px", fontSize: 16, maxWidth: 720 }}>
+          A hub holds every feature of one product, the scenarios that prove each works, and how they depend on each other.
+        </p>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(320px, 100%), 1fr))", gap: 16 }}>
+          <div className="card" style={{ padding: 24, display: "flex", flexDirection: "column", gap: 10, background: "#171717", color: "#FFFFFF", borderColor: "#171717" }}>
+            <div className="eyebrow" style={{ color: "#C9C4B8" }}>
+              Recommended
+            </div>
+            <div className="serif" style={{ fontSize: 24 }}>
+              Orun QA, testing itself
+            </div>
+            <p style={{ margin: 0, color: "#D6D2C8", fontSize: 14 }}>
+              Start with this product&rsquo;s own {ORUN_QA_SELF.features.length} features and the links between them. Every new Orun QA feature joins this hub as it ships.
+            </p>
+            <div>
+              <button type="button" className="btn gold" onClick={setUpSelf} disabled={busy}>
+                {busy ? "Setting up…" : "Set up Orun QA's own hub"}
+              </button>
+            </div>
+          </div>
+          <div className="card" style={{ padding: 24, display: "flex", flexDirection: "column", gap: 10 }}>
+            <div className="eyebrow">Another product</div>
+            <div className="serif" style={{ fontSize: 24 }}>
+              A hub for your product
+            </div>
+            <p className="muted" style={{ margin: 0, fontSize: 14 }}>
+              Name it and give its stage address. You add its features, or import them from a manifest.
+            </p>
+            <div>
+              <button type="button" className="btn" onClick={() => setOpen(true)}>
+                Create a hub
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>

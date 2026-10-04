@@ -5,7 +5,7 @@ import { errorResponse, methodNotAllowed, notFound, successResponse } from "./ht
 import { fromPublic, generateRequestId, parseOrgPublicId } from "./ids.js";
 
 const REQUEST_ID_RE = /^[\w-]{1,128}$/;
-const BASE = /^\/v1\/organizations\/([^/]+)\/qa\/hubs(?:\/([^/]+)(?:\/(areas|features|map|edges)(?:\/([^/]+)(?:\/(confirm))?)?)?)?$/;
+const BASE = /^\/v1\/organizations\/([^/]+)\/qa\/hubs(?:\/([^/]+)(?:\/(areas|features|map|edges|import)(?:\/([^/]+)(?:\/(confirm))?)?)?)?$/;
 
 export function isQaPath(pathname: string): boolean {
   return BASE.test(pathname);
@@ -64,6 +64,10 @@ export async function route(request: Request, env: Env, deps?: Deps): Promise<Re
     }
 
     switch (collection) {
+      case "import":
+        if (itemPub) return notFound(requestId, url.pathname);
+        return method === "POST" ? h.importManifest(ctx, hubId, request) : methodNotAllowed(requestId);
+
       case "map":
         if (itemPub) return notFound(requestId, url.pathname);
         return method === "GET" ? h.getMap(ctx, hubId) : methodNotAllowed(requestId);

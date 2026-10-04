@@ -4,7 +4,9 @@ import { createQaRepository } from "@saas/db/qa";
 import { createSqlExecutor } from "@saas/db/hyperdrive";
 import {
   QA_LIMITS,
+  MANIFEST_LIMITS,
   computeRipple,
+  type ImportResult,
   type PublicArea,
   type PublicFeature,
   type PublicFeatureEdge,
@@ -473,5 +475,179 @@ export function deleteEdge(ctx: Ctx, hubId: string, edgeId: string): Promise<Res
     }
     const r = await repo.deleteEdge(ctx.orgId, hubId, edgeId);
     return r.ok ? successResponse({ deleted: true }, ctx.requestId) : fromRepoError(r.error, ctx.requestId);
+  });
+}
+
+// ── import a manifest (idempotent by name) ───────────────────────────────────
+
+interface ParsedManifest {
+  areas: { name: string; position: number }[];
+  features: { name: string; description?: string | undefined; area?: string | null | undefined; codeRefs?: string[] | undefined; specLinks?: string[] | undefined }[];
+  edges: { from: string; to: string }[];
+}
+
+function parseManifest(body: Record<string, unknown>): { ok: true; value: ParsedManifest } | { ok: false; fields: Fields } {
+  const fields: Fields = {};
+  const list = (key: "areas" | "features" | "edges", max: number): Record<string, unknown>[] => {
+    const v = body[key];
+    if (v === undefined) return [];
+    if (!Array.isArray(v) || v.some((x) => !x || typeof x !== "object" || Array.isArray(x))) {
+      fields[key] = ["Must be a list of objects"];
+      return [];
+    }
+    if (v.length > max) fields[key] = [`At most ${max} entries`];
+    return v as Record<string, unknown>[];
+  };
+  const areas = list("areas", MANIFEST_LIMITS.areas).map((a, i) => {
+    const f: Fields = {};
+    const name = str(f, a, "name", { required: true, max: QA_LIMITS.nameMax });
+    let position = i;
+    if (a.position !== undefined) {
+      if (typeof a.position === "number" && Number.isInteger(a.position) && a.position >= 0 && a.position <= QA_LIMITS.positionMax) position = a.position;
+      else (f.position ??= []).push(`A whole number from 0 to ${QA_LIMITS.positionMax}`);
+    }
+    if (Object.keys(f).length > 0) fields[`areas.${i}`] = Object.values(f).flat();
+    return { name: name ?? "", position };
+  });
+  const features = list("features", MANIFEST_LIMITS.features).map((x, i) => {
+    const f: Fields = {};
+    const name = str(f, x, "name", { required: true, max: QA_LIMITS.nameMax });
+    const description = str(f, x, "description", { max: QA_LIMITS.descriptionMax });
+    const area = x.area === null ? null : str(f, x, "area", { max: QA_LIMITS.nameMax });
+    if (area === "") (f.area ??= []).push("Give an area name, or null for no area");
+    const codeRefs = strList(f, x, "codeRefs");
+    const specLinks = strList(f, x, "specLinks");
+    if (Object.keys(f).length > 0) fields[`features.${i}`] = Object.values(f).flat();
+    return { name: name ?? "", description, area, codeRefs, specLinks };
+  });
+  const edges = list("edges", MANIFEST_LIMITS.edges).map((x, i) => {
+    const f: Fields = {};
+    const from = str(f, x, "from", { required: true, max: QA_LIMITS.nameMax });
+    const to = str(f, x, "to", { required: true, max: QA_LIMITS.nameMax });
+    if (from && to && from.toLowerCase() === to.toLowerCase()) f.to = ["A feature cannot depend on itself"];
+    if (Object.keys(f).length > 0) fields[`edges.${i}`] = Object.values(f).flat();
+    return { from: from ?? "", to: to ?? "" };
+  });
+  const lower = (s: string) => s.toLowerCase();
+  const dupe = (names: string[]) => names.find((n, i) => names.findIndex((m) => lower(m) === lower(n)) !== i);
+  const da = dupe(areas.map((a) => a.name));
+  if (da) fields.areas = [...(fields.areas ?? []), `Area "${da}" appears twice`];
+  const df = dupe(features.map((f) => f.name));
+  if (df) fields.features = [...(fields.features ?? []), `Feature "${df}" appears twice`];
+  return Object.keys(fields).length > 0 ? { ok: false, fields } : { ok: true, value: { areas, features, edges } };
+}
+
+export async function importManifest(ctx: Ctx, hubId: string, request: Request): Promise<Response> {
+  const body = await readJson(request);
+  if (!body) return validationError(ctx.requestId, { body: ["Request body must be a JSON object"] });
+  const parsed = parseManifest(body);
+  if (!parsed.ok) return validationError(ctx.requestId, parsed.fields);
+  const m = parsed.value;
+
+  return withRepo(ctx, "qa.feature.write", async (repo) => {
+    const hub = await repo.getHub(ctx.orgId, hubId);
+    if (!hub.ok) return fromRepoError(hub.error, ctx.requestId);
+    const [areasNow, featuresNow, edgesNow] = await Promise.all([
+      repo.listAreas(ctx.orgId, hubId),
+      repo.listFeatures(ctx.orgId, hubId),
+      repo.listEdges(ctx.orgId, hubId),
+    ]);
+    if (!areasNow.ok) return fromRepoError(areasNow.error, ctx.requestId);
+    if (!featuresNow.ok) return fromRepoError(featuresNow.error, ctx.requestId);
+    if (!edgesNow.ok) return fromRepoError(edgesNow.error, ctx.requestId);
+
+    // Check every edge resolves before writing anything.
+    const lower = (s: string) => s.toLowerCase();
+    const known = new Set([...featuresNow.value.map((f) => lower(f.name)), ...m.features.map((f) => lower(f.name))]);
+    const unknown = m.edges.flatMap((e) => [e.from, e.to]).filter((n) => !known.has(lower(n)));
+    if (unknown.length > 0) return validationError(ctx.requestId, { edges: [`Unknown feature "${unknown[0]}"`] });
+    // A feature may name an area from the manifest or one the hub already has.
+    const knownAreas = new Set([...areasNow.value.map((a) => lower(a.name)), ...m.areas.map((a) => lower(a.name))]);
+    const badArea = m.features.find((f) => f.area && !knownAreas.has(lower(f.area)));
+    if (badArea) return validationError(ctx.requestId, { features: [`Area "${badArea.area}" is neither in the manifest nor in the hub`] });
+
+    const result: ImportResult = { areas: { created: 0, kept: 0 }, features: { created: 0, updated: 0, kept: 0 }, edges: { created: 0, confirmed: 0, kept: 0 } };
+    const at = now(ctx);
+
+    const areaId = new Map(areasNow.value.map((a) => [lower(a.name), a.id]));
+    for (const a of m.areas) {
+      if (areaId.has(lower(a.name))) {
+        result.areas.kept++;
+        continue;
+      }
+      const r = await repo.createArea({ id: nextId(ctx), orgId: ctx.orgId, hubId, name: a.name, position: a.position, createdAt: at });
+      if (!r.ok) return fromRepoError(r.error, ctx.requestId);
+      areaId.set(lower(a.name), r.value.id);
+      result.areas.created++;
+    }
+
+    const featureId = new Map(featuresNow.value.map((f) => [lower(f.name), f.id]));
+    const featureNow = new Map(featuresNow.value.map((f) => [f.id, f]));
+    const same = (a: string[], b: string[]) => a.length === b.length && a.every((x, i) => x === b[i]);
+    for (const f of m.features) {
+      const area = f.area === undefined ? undefined : f.area === null ? null : (areaId.get(lower(f.area)) ?? null);
+      const existing = featureId.get(lower(f.name));
+      if (existing) {
+        // Write only what the manifest gives, and only when it differs — so a
+        // re-import is cheap and `updated` counts real changes.
+        const cur = featureNow.get(existing)!;
+        const patch = {
+          ...(f.description !== undefined && f.description !== cur.description ? { description: f.description } : {}),
+          ...(area !== undefined && area !== cur.areaId ? { areaId: area } : {}),
+          ...(f.codeRefs !== undefined && !same(f.codeRefs, cur.codeRefs) ? { codeRefs: f.codeRefs } : {}),
+          ...(f.specLinks !== undefined && !same(f.specLinks, cur.specLinks) ? { specLinks: f.specLinks } : {}),
+        };
+        if (Object.keys(patch).length === 0) {
+          result.features.kept++;
+          continue;
+        }
+        const r = await repo.updateFeature(ctx.orgId, hubId, existing, { ...patch, updatedAt: at });
+        if (!r.ok) return fromRepoError(r.error, ctx.requestId);
+        result.features.updated++;
+        continue;
+      }
+      const r = await repo.createFeature({
+        id: nextId(ctx),
+        orgId: ctx.orgId,
+        hubId,
+        areaId: area ?? null,
+        name: f.name,
+        description: f.description ?? "",
+        ownerUserId: null,
+        qaUserId: null,
+        isPublic: false,
+        codeRefs: f.codeRefs ?? [],
+        specLinks: f.specLinks ?? [],
+        createdAt: at,
+      });
+      if (!r.ok) return fromRepoError(r.error, ctx.requestId);
+      featureId.set(lower(f.name), r.value.id);
+      result.features.created++;
+    }
+
+    const pairs = new Map(edgesNow.value.map((e) => [`${e.fromFeatureId}>${e.toFeatureId}`, e]));
+    for (const e of m.edges) {
+      const from = featureId.get(lower(e.from))!;
+      const to = featureId.get(lower(e.to))!;
+      const existingEdge = pairs.get(`${from}>${to}`);
+      if (existingEdge) {
+        // The PM importing a link that QA or the agent proposed confirms it.
+        if (existingEdge.confirmedAt === null) {
+          const r = await repo.confirmEdge(ctx.orgId, hubId, existingEdge.id, ctx.actor.subjectId, at);
+          if (!r.ok) return fromRepoError(r.error, ctx.requestId);
+          result.edges.confirmed++;
+        } else {
+          result.edges.kept++;
+        }
+        continue;
+      }
+      // The importer is the PM (qa.feature.write), so the edges arrive confirmed.
+      const r = await repo.createEdge({ id: nextId(ctx), orgId: ctx.orgId, hubId, fromFeatureId: from, toFeatureId: to, source: "human", confirmedBy: ctx.actor.subjectId, createdAt: at });
+      if (!r.ok) return fromRepoError(r.error, ctx.requestId);
+      pairs.set(`${from}>${to}`, r.value);
+      result.edges.created++;
+    }
+
+    return successResponse({ result }, ctx.requestId);
   });
 }
