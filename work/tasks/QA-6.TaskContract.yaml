@@ -1,0 +1,13 @@
+apiVersion: orun.io/v1
+kind: TaskContract
+metadata:
+  name: QA-6
+spec:
+  goal: The feature page and Insights take the design canvas's markup — header, player frame, the ripple chain, the side cards, the dependency map's node colours and legend, the selected/relies-on/breaks cards — on real data, with honest states where QA2 data does not exist yet.
+  affects:
+    - default/orun-qa/web-console-next
+  doneWhen:
+    - /demo/qa?view=feature matches the feature artboard's measured type, colours, radii and columns
+    - the feature page and Insights render from real rows on stage
+    - the web-console-next lane is green
+  gates: []

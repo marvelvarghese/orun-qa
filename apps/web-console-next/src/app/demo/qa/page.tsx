@@ -4,7 +4,9 @@ import * as React from "react";
 import Link from "next/link";
 import { CheckCheck, Bug, ClipboardList, FolderKanban, Gauge, LayoutGrid, ListChecks, MessageSquare, Network, Play, Settings, UserRound } from "lucide-react";
 import type { PublicArea, PublicFeature, FeatureHealth } from "@saas/contracts/qa";
+import { useSearchParams } from "next/navigation";
 import { FeaturesView } from "@/components/qa/features-view";
+import { FeatureView } from "@/components/qa/feature-view";
 
 /**
  * /demo/qa — a token-free preview of the Orun QA screens with the design
@@ -93,6 +95,7 @@ function Rail() {
 }
 
 export default function QaDemoPage() {
+  const view = useSearchParams()?.get("view");
   // Sample data only: never shown in a deployed console unless explicitly enabled.
   if (process.env.NODE_ENV === "production" && process.env.NEXT_PUBLIC_QA_DEMO !== "1") {
     return <p style={{ padding: 32 }}>Not available.</p>;
@@ -101,6 +104,17 @@ export default function QaDemoPage() {
     <div className="flex min-h-screen bg-background">
       <Rail />
       <main className="mx-auto w-full max-w-[1320px] flex-1 px-8 pb-16 pt-8">
+        {view === "feature" ? (
+          <FeatureView
+            feature={{ ...FEATURES[4]!, specLinks: ["LIN-498"], ownerUserId: "Rahul", qaUserId: "Priya" }}
+            ripple={{ feature: FEATURES[4]!.id, reliesOn: [FEATURES[3]!.id], breaksDirectly: [FEATURES[5]!.id, FEATURES[10]!.id], breaksNext: [FEATURES[11]!.id] }}
+            areas={AREAS}
+            names={Object.fromEntries(FEATURES.map((f) => [f.id, f.name]))}
+            featuresHref="#"
+            featureHref={() => "#"}
+            insightsHref="#"
+          />
+        ) : (
         <FeaturesView
           productName="Product"
           features={FEATURES}
@@ -117,6 +131,7 @@ export default function QaDemoPage() {
           testsHref="#"
           showAddScenario
         />
+        )}
       </main>
     </div>
   );
