@@ -1,0 +1,15 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "orun-qa-web-console-next",
+  "main": ".open-next/worker.js",
+  // The one bundle in the fleet whose size is a live constraint: 2296 KiB
+  // gzipped unminified against the free plan's 3072 KiB cap. Minify takes it
+  // to ~1880 KiB. Every other worker gzips to 27-40 KiB and never comes near.
+  "minify": true,
+  "compatibility_date": "2024-12-30",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  }
+}
