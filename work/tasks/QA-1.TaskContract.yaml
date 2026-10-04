@@ -1,0 +1,15 @@
+apiVersion: orun.io/v1
+kind: TaskContract
+metadata:
+  name: QA-1
+spec:
+  goal: The Orun QA epic doc set and declaration are on main and pushed, so the epic, its milestones and this task exist in Orunbase.
+  affects:
+    - work/epics/orunqa-feature-hub/**
+    - intent.yaml
+    - work/tasks/QA-1.TaskContract.yaml
+  doneWhen:
+    - epic.yaml, README.md, design.md, implementation-plan.md, risks-and-open-questions.md and IMPLEMENTATION-STATUS.md are on main
+    - orun spec list --epic orunqa-feature-hub shows the documents
+    - task_get QA-1 reads done
+  gates: []

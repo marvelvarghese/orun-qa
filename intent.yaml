@@ -147,3 +147,11 @@ repo:
     pages:
       - { path: ai/context/operations.md, role: runbook, title: Operating contract }
       - { path: ai/context/deployment.md, role: reference, title: Live deployment manifest }
+
+# Where the declared work lives (software-factory step 5). The plan that runs
+# on main reconciles this tree into Orunbase after a successful plan: an epic,
+# a milestone or a task is a file in a merged PR, never minted by hand.
+work:
+  epics: work/epics
+  tasks: work/tasks
+  sync: on-merge
