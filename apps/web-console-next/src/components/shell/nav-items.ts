@@ -68,6 +68,9 @@ export function buildNavSections(scope: NavScope, soloMode: boolean = SOLO_MODE)
             { href: `${orgBase}/settings`, label: "Settings", icon: "Settings", subPanel: true },
           ]
         : [
+            // Orun QA (QA1): the product view comes first — what works, and how it connects.
+            { href: `${orgBase}/features`, label: "Features", icon: "LayoutGrid" },
+            { href: `${orgBase}/insights`, label: "Insights", icon: "Network" },
             { href: `${orgBase}/projects`, label: "Projects", icon: "FolderKanban" },
             { href: `${orgBase}/usage`, label: "Usage & quota", icon: "Gauge" },
             // Opens the dedicated settings panel — flagged so the renderer shows a ›.
