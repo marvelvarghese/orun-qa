@@ -26,6 +26,13 @@ import {
   GitBranch,
   LayoutGrid,
   Network,
+  CheckCheck,
+  Bug,
+  ListChecks,
+  ClipboardList,
+  Play,
+  UserRound,
+  MessageSquare,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -38,6 +45,12 @@ import { SidebarFind } from "./sidebar-find";
 const ICONS: Record<string, LucideIcon> = {
   LayoutGrid,
   Network,
+  CheckCheck,
+  Bug,
+  ListChecks,
+  ClipboardList,
+  Play,
+  UserRound,
   Building2,
   FolderKanban,
   Boxes,
@@ -127,6 +140,36 @@ function ProductNav({
   mobile: boolean;
 }) {
   const sections = buildNavSections({ orgSlug, projectSlug });
+  if (!mobile) {
+    // The design canvas's rail: static group labels, 40px rows, the active row
+    // on a warm grey. Styles live in styles/qa.css under the rail's .qa scope.
+    return (
+      <nav aria-label="Primary" className="flex flex-col gap-0.5 px-3 pb-4">
+        {orgSlug && (
+          <Link href={`/orgs/${orgSlug}/agent`} className="btn primary qa-agent-btn" aria-current={pathname?.startsWith(`/orgs/${orgSlug}/agent`) ? "page" : undefined}>
+            <MessageSquare aria-hidden="true" />
+            Ask the agent
+          </Link>
+        )}
+        {sections.map((section) => (
+          <div key={section.id} className="flex flex-col gap-0.5">
+            <div className="railh">{section.label}</div>
+            {section.links.map((link) => {
+              const Icon = ICONS[link.icon] ?? Settings;
+              const active = isLinkActive(link.href, pathname);
+              return (
+                <Link key={link.href} href={link.href} className={cn("nav", active && "on")} aria-current={active ? "page" : undefined}>
+                  <Icon aria-hidden="true" />
+                  <span className="min-w-0 flex-1 truncate">{link.label}</span>
+                  {link.subPanel && <ChevronRight aria-hidden="true" className="opacity-50" />}
+                </Link>
+              );
+            })}
+          </div>
+        ))}
+      </nav>
+    );
+  }
   return (
     <nav className={cn("px-2 pb-4 pt-3", mobile ? "space-y-5" : "space-y-6")}>
       {sections.map((section) => (
@@ -220,8 +263,8 @@ export function Sidebar() {
     // `self-start` keeps it from stretching to the (taller) content so `sticky`
     // can pin it; the nav scrolls in its own region and the account chip is
     // pinned at the bottom.
-    <aside className="sticky top-0 hidden h-dvh w-60 shrink-0 flex-col self-start border-r bg-card/40 md:flex">
-      <div className="shrink-0 space-y-2 border-b p-2">
+    <aside className="qa qa-rail sticky top-0 hidden h-dvh w-[272px] shrink-0 flex-col self-start md:flex">
+      <div className="shrink-0 space-y-2 px-3 pb-3 pt-4">
         <SidebarOrgSwitcher />
         <SidebarFind />
       </div>
@@ -230,7 +273,7 @@ export function Sidebar() {
         <NavContent />
       </div>
 
-      <div className="shrink-0 border-t p-2">
+      <div className="shrink-0 border-t border-[#E1DDD4] px-3 py-3">
         <SidebarAccount />
       </div>
     </aside>

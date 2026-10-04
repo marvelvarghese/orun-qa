@@ -58,25 +58,50 @@ export function buildNavSections(scope: NavScope, soloMode: boolean = SOLO_MODE)
     // keys, webhooks, config, audit, identity) lives behind a single Settings
     // entry, which opens the dedicated `/settings` surface with its own
     // secondary navigation (see `settings-nav.ts`).
-    sections.push({
-      id: "org",
-      label: soloMode ? "Account" : orgSlug ? `Org · ${orgSlug}` : "Organization",
-      links: soloMode
-        ? [
-            // Solo: projects & usage/quota are platform plumbing the B2C user
-            // never sees; their surfaces collapse to the Settings (Account) panel.
-            { href: `${orgBase}/settings`, label: "Settings", icon: "Settings", subPanel: true },
-          ]
-        : [
-            // Orun QA (QA1): the product view comes first — what works, and how it connects.
-            { href: `${orgBase}/features`, label: "Features", icon: "LayoutGrid" },
-            { href: `${orgBase}/insights`, label: "Insights", icon: "Network" },
-            { href: `${orgBase}/projects`, label: "Projects", icon: "FolderKanban" },
-            { href: `${orgBase}/usage`, label: "Usage & quota", icon: "Gauge" },
-            // Opens the dedicated settings panel — flagged so the renderer shows a ›.
-            { href: `${orgBase}/settings`, label: "Settings", icon: "Settings", subPanel: true },
-          ],
-    });
+    if (soloMode) {
+      sections.push({
+        id: "org",
+        label: "Account",
+        links: [
+          // Solo: projects & usage/quota are platform plumbing the B2C user
+          // never sees; their surfaces collapse to the Settings (Account) panel.
+          { href: `${orgBase}/settings`, label: "Settings", icon: "Settings", subPanel: true },
+        ],
+      });
+    } else {
+      // Orun QA (the design canvas's rail): the product view first, then testing,
+      // then the workspace administration the baseline ships.
+      sections.push({
+        id: "product",
+        label: "Product",
+        links: [
+          { href: `${orgBase}/features`, label: "Features", icon: "LayoutGrid" },
+          { href: `${orgBase}/reviews`, label: "Reviews", icon: "CheckCheck" },
+          { href: `${orgBase}/bugs`, label: "Bugs", icon: "Bug" },
+          { href: `${orgBase}/insights`, label: "Insights", icon: "Network" },
+        ],
+      });
+      sections.push({
+        id: "testing",
+        label: "Testing",
+        links: [
+          { href: `${orgBase}/plan`, label: "Plan scenarios", icon: "ListChecks" },
+          { href: `${orgBase}/tests`, label: "All tests", icon: "ClipboardList" },
+          { href: `${orgBase}/try`, label: "Try a scenario", icon: "Play" },
+          { href: `${orgBase}/desk`, label: "Scenario desk", icon: "UserRound" },
+        ],
+      });
+      sections.push({
+        id: "org",
+        label: orgSlug ? `Workspace · ${orgSlug}` : "Workspace",
+        links: [
+          { href: `${orgBase}/projects`, label: "Projects", icon: "FolderKanban" },
+          { href: `${orgBase}/usage`, label: "Usage & quota", icon: "Gauge" },
+          // Opens the dedicated settings panel — flagged so the renderer shows a ›.
+          { href: `${orgBase}/settings`, label: "Settings", icon: "Settings", subPanel: true },
+        ],
+      });
+    }
   }
 
   // Project scope is suppressed entirely under Solo (no projects exist).

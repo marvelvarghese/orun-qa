@@ -31,20 +31,23 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <Sidebar />
       ) : (
         <aside
-          className="sticky top-0 hidden h-dvh w-60 shrink-0 self-start border-r bg-card/40 md:flex"
+          className="sticky top-0 hidden h-dvh w-[272px] shrink-0 self-start border-r border-[#E6E3DC] bg-rail md:flex"
           aria-hidden
         />
       )}
       <div className="flex min-w-0 flex-1 flex-col">
+        {/* The design has no top bar on desktop — the rail holds navigation and the account. */}
         {ready ? (
-          <Topbar />
+          <div className="md:hidden">
+            <Topbar />
+          </div>
         ) : (
           <header
-            className="sticky top-0 z-30 h-12 border-b bg-background/80 backdrop-blur-md pt-safe"
+            className="sticky top-0 z-30 h-12 border-b bg-background/80 backdrop-blur-md pt-safe md:hidden"
             aria-hidden
           />
         )}
-        <main className="mx-auto w-full max-w-7xl flex-1 px-4 pb-[calc(env(safe-area-inset-bottom)+4.5rem)] pt-6 md:px-8 md:pb-6">
+        <main className="mx-auto w-full max-w-[1320px] flex-1 px-4 pb-[calc(env(safe-area-inset-bottom)+4.5rem)] pt-6 md:px-8 md:pb-16 md:pt-8">
           {ready ? children : <ShellSkeleton />}
         </main>
         {ready && <BottomTabs />}

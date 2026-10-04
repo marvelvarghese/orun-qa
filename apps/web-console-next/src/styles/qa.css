@@ -1,0 +1,94 @@
+/* Orun QA — the design canvas's component styles (Feature hub · PM view),
+   carried over verbatim and scoped under .qa so they never touch the rest of
+   the console. Class names match the canvas so pages can mirror its markup. */
+.qa { color: #171717; font-family: var(--font-sans); font-size: 15px; line-height: 1.5; }
+.qa a { color: #2563C9; }
+.qa a:hover { color: #1d4fa3; }
+.qa .serif{font-family:Lora,Georgia,serif}
+.qa .mono{font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace;font-size:12px}
+.qa .card{background:#FFFFFF;border:1px solid #E6E3DC;border-radius:16px}
+.qa .pill{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 10px;border-radius:999px;font-size:12px;font-weight:600;line-height:1;white-space:nowrap}
+.qa .pill i{width:7px;height:7px;border-radius:999px;background:currentColor;display:inline-block}
+.qa .ok{background:#E3F0E7;color:#2C6644}
+.qa .bad{background:#F8DEDC;color:#A33A35}
+.qa .warn{background:#F7EFDC;color:#7A6320}
+.qa .info{background:#DDE7F6;color:#2C5AA8}
+.qa .neutral{background:#EFEDE8;color:#4A4843}
+.qa .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:40px;padding:0 16px;border-radius:999px;border:1px solid #D6D2C8;background:#FFFFFF;font:600 14px "Hanken Grotesk",system-ui,sans-serif;color:#171717;cursor:pointer;white-space:nowrap;text-decoration:none;box-sizing:border-box}
+.qa .btn:hover{color:#171717;border-color:#B9B4A8}
+.qa .btn.primary{background:#171717;color:#FFFFFF;border-color:#171717}
+.qa .btn.primary:hover{color:#FFFFFF;background:#333230}
+.qa .btn.gold{background:#C39B45;border-color:#C39B45;color:#171717}
+.qa .chip{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border-radius:999px;border:1px solid #E1DDD4;background:#FFFFFF;font:500 13px "Hanken Grotesk",system-ui,sans-serif;color:#2F2E2B;cursor:pointer;white-space:nowrap;text-decoration:none}
+.qa .chip.on{background:#171717;border-color:#171717;color:#FFFFFF}
+.qa .eyebrow{font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#6E6E68}
+.qa .muted{color:#5E5C57}
+.qa .topnav{display:flex;align-items:center;height:36px;padding:0 14px;border-radius:999px;color:#4A4843;text-decoration:none;font-size:14px;font-weight:500;white-space:nowrap}
+.qa .topnav:hover{background:#EFEDE8;color:#171717}
+.qa .topnav.on{background:#171717;color:#FFFFFF}
+.qa input[type=text], .qa input[type=search], .qa textarea, .qa select{font:15px "Hanken Grotesk",system-ui,sans-serif;color:#171717;border:1px solid #D6D2C8;border-radius:12px;padding:10px 12px;background:#FFFFFF;box-sizing:border-box}
+.qa .nav{display:flex;align-items:center;gap:10px;height:40px;padding:0 10px;border-radius:8px;color:#444444;text-decoration:none;font-size:14px;font-weight:500}
+.qa .nav:hover{background:#E8E6E0;color:#171717}
+.qa .nav.on{background:#E1DED6;color:#171717;font-weight:600}
+.qa .nav svg{width:16px;height:16px;flex:none}
+.qa .nav .cnt{margin-left:auto;min-width:20px;height:20px;padding:0 6px;box-sizing:border-box;border-radius:999px;background:#E1DED6;color:#4A4843;font-size:12px;font-weight:600;display:inline-flex;align-items:center;justify-content:center}
+.qa .nav .cnt.warn{background:#F7EFDC;color:#7A6320}
+.qa .railh{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#6E6E68;padding:14px 10px 6px}
+.qa .row{display:flex;gap:14px;align-items:center;width:100%;padding:16px 20px;border:0;background:transparent;text-align:left;cursor:pointer;font:15px "Hanken Grotesk",system-ui,sans-serif;color:#171717;flex-wrap:wrap;box-sizing:border-box}
+.qa .row:hover{background:#FBFAF8}
+.qa .api{display:flex;gap:10px;align-items:center;padding:8px 10px;border-radius:10px;background:#F6F5F2;font-size:14px;flex-wrap:wrap}
+.qa .bubble{padding:14px 16px;border-radius:16px;font-size:15px;max-width:640px}
+.qa .node{position:absolute;width:184px;height:64px;box-sizing:border-box;padding:8px;display:flex;align-items:center;justify-content:center;text-align:center;border-radius:12px;font:14px/18px "Hanken Grotesk",system-ui,sans-serif;cursor:pointer}
+.qa .demo{position:relative;aspect-ratio:16/10;background:#22211E;border-radius:12px;overflow:hidden}
+.qa .demo .win{position:absolute;left:7%;right:7%;top:9%;bottom:18%;background:#FFFFFF;border-radius:6px;overflow:hidden}
+.qa .demo .tb{position:absolute;left:0;right:0;top:0;height:11%;background:#EEECE7}
+.qa .demo .sd{position:absolute;left:0;top:11%;bottom:0;width:22%;background:#F6F5F1}
+.qa .demo .ln{position:absolute;height:5%;border-radius:3px;background:#E4E1DA}
+.qa .demo .h{position:absolute;width:16%;height:9%;border-radius:4px;background:#C39B45;opacity:.3;z-index:2}
+.qa .demo .h1{animation:qa-f1 7s infinite}
+.qa .demo .h2{animation:qa-f2 7s infinite}
+.qa .demo .md{position:absolute;left:30%;top:28%;width:44%;height:46%;background:#FFFFFF;border:1px solid #D9D5CC;border-radius:6px;box-shadow:0 8px 24px rgba(0,0,0,.18);opacity:0;z-index:1;animation:qa-md 7s infinite}
+.qa .demo .cur{position:absolute;width:16px;height:16px;z-index:3;left:85%;top:90%}
+.qa .demo .cur svg{width:16px;height:16px;display:block}
+.qa .vA .h1{left:26%;top:20%}
+.qa .vA .h2{left:50%;top:57%}
+.qa .vA .cur{animation:qa-cA 7s infinite ease-in-out}
+.qa .vB .h1{left:52%;top:15%}
+.qa .vB .h2{left:32%;top:65%}
+.qa .vB .cur{animation:qa-cB 7s infinite ease-in-out}
+.qa .vB .md{display:none}
+.qa .vC .h1{left:72%;top:35%}
+.qa .vC .h2{left:22%;top:50%}
+.qa .vC .cur{animation:qa-cC 7s infinite ease-in-out}
+.qa .vC .md{display:none}
+.qa .demo .cap{position:absolute;left:7%;right:7%;bottom:7%;height:20px;color:#FFFFFF;font-size:13px;font-weight:500}
+.qa .demo .cap span{position:absolute;left:0;top:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.qa .demo .c1{animation:qa-k1 7s infinite}
+.qa .demo .c2{animation:qa-k2 7s infinite;opacity:0}
+.qa .demo .c3{animation:qa-k3 7s infinite;opacity:0}
+.qa .demo .pg{position:absolute;left:7%;right:7%;bottom:3.5%;height:3px;background:rgba(255,255,255,.2);border-radius:2px;overflow:hidden}
+.qa .demo .pg i{display:block;height:100%;width:0;background:#C39B45;animation:qa-pg 7s linear infinite}
+.qa .demo .dur{position:absolute;right:3%;top:3%;font:500 11px "IBM Plex Mono",ui-monospace,monospace;color:#E9E6DF;background:rgba(0,0,0,.45);padding:3px 6px;border-radius:6px}
+.qa .demo .tag{position:absolute;left:3%;top:3%;font:600 11px "Hanken Grotesk",system-ui,sans-serif;color:#171717;background:#FFFFFF;padding:3px 8px;border-radius:999px;display:flex;align-items:center;gap:5px}
+.qa .demo .tag i{width:6px;height:6px;border-radius:999px;background:#3A8159;display:inline-block}
+.qa .demo.big .cap{font-size:20px;height:28px;bottom:6%}
+.qa .demo.fail .h2{background:#C94A44}
+.qa .demo.fail .tag i{background:#C94A44}
+@keyframes qa-f1{0%,26%{opacity:.3;transform:scale(1)}30%{opacity:1;transform:scale(1.06)}38%,100%{opacity:.3;transform:scale(1)}}
+@keyframes qa-f2{0%,58%{opacity:.3;transform:scale(1)}62%{opacity:1;transform:scale(1.06)}70%,100%{opacity:.3;transform:scale(1)}}
+@keyframes qa-md{0%,31%{opacity:0}34%,82%{opacity:1}86%,100%{opacity:0}}
+@keyframes qa-cA{0%{left:85%;top:90%}25%,32%{left:34%;top:24%}55%,65%{left:58%;top:61%}88%,100%{left:85%;top:90%}}
+@keyframes qa-cB{0%{left:85%;top:90%}25%,32%{left:60%;top:19%}55%,65%{left:40%;top:69%}88%,100%{left:85%;top:90%}}
+@keyframes qa-cC{0%{left:85%;top:90%}25%,32%{left:80%;top:39%}55%,65%{left:30%;top:54%}88%,100%{left:85%;top:90%}}
+@keyframes qa-k1{0%,28%{opacity:1}32%,100%{opacity:0}}
+@keyframes qa-k2{0%,28%{opacity:0}32%,60%{opacity:1}64%,100%{opacity:0}}
+@keyframes qa-k3{0%,60%{opacity:0}64%,96%{opacity:1}100%{opacity:0}}
+@keyframes qa-pg{0%{width:0}100%{width:100%}}
+@media (prefers-reduced-motion: reduce){.qa .demo *{animation:none!important}.qa .demo .c2, .qa .demo .c3{opacity:0}}
+
+/* The rail (design: 272px, #F2F1ED, a hairline on the right). */
+.qa-rail { background: #F2F1ED; border-right: 1px solid #E6E3DC; }
+.qa .qa-agent-btn { justify-content: flex-start; height: 40px; margin: 0 0 14px; border-radius: 10px; color: #FFFFFF; }
+.qa .qa-agent-btn:hover { color: #FFFFFF; }
+.qa .qa-agent-btn svg { width: 16px; height: 16px; }
+.qa .nav[aria-current="page"], .qa .nav.on { background: #E1DED6; color: #171717; font-weight: 600; }
