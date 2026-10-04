@@ -2,8 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Search, Sun, Moon, LogOut, User2, Building2, Command as CommandIcon } from "lucide-react";
-import { useTheme } from "next-themes";
+import { Search, LogOut, User2, Building2, Command as CommandIcon } from "lucide-react";
 import { ScopeSwitcher } from "./scope-switcher";
 import { MobileNav } from "./mobile-nav";
 import { Button } from "@/components/ui/button";
@@ -23,8 +22,6 @@ export function Topbar() {
   const { token, target, isLocked, setToken } = useSession();
   const palette = usePalette();
   const router = useRouter();
-  const { theme, setTheme } = useTheme();
-  const toggleTheme = () => setTheme(theme === "dark" ? "light" : "dark");
 
   return (
     <header className="sticky top-0 z-30 border-b bg-background/80 backdrop-blur-md pt-safe">
@@ -76,20 +73,6 @@ export function Topbar() {
               </DropdownMenuItem>
               <DropdownMenuItem onSelect={() => router.push("/orgs")}>
                 <Building2 className="h-4 w-4 opacity-70" /> Organizations
-              </DropdownMenuItem>
-              {/* Theme toggle — this account menu is the mobile theme control. */}
-              <DropdownMenuItem
-                onSelect={(e) => {
-                  e.preventDefault();
-                  toggleTheme();
-                }}
-              >
-                {theme === "dark" ? (
-                  <Sun className="h-4 w-4 opacity-70" />
-                ) : (
-                  <Moon className="h-4 w-4 opacity-70" />
-                )}
-                {theme === "dark" ? "Light mode" : "Dark mode"}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem

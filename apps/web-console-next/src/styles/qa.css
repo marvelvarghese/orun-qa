@@ -2,8 +2,10 @@
    carried over verbatim and scoped under .qa so they never touch the rest of
    the console. Class names match the canvas so pages can mirror its markup. */
 .qa { color: #171717; font-family: var(--font-sans); font-size: 15px; line-height: 1.5; }
-.qa a { color: #2563C9; }
-.qa a:hover { color: #1d4fa3; }
+/* :where() keeps these at element specificity, so console Tailwind colours
+   (rail settings links, buttons) still win inside a .qa scope. */
+:where(.qa) a { color: #2563C9; }
+:where(.qa) a:hover { color: #1d4fa3; }
 .qa .serif{font-family:Lora,Georgia,serif}
 .qa .mono{font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace;font-size:12px}
 .qa .card{background:#FFFFFF;border:1px solid #E6E3DC;border-radius:16px}

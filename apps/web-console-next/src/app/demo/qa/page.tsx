@@ -93,6 +93,10 @@ function Rail() {
 }
 
 export default function QaDemoPage() {
+  // Sample data only: never shown in a deployed console unless explicitly enabled.
+  if (process.env.NODE_ENV === "production" && process.env.NEXT_PUBLIC_QA_DEMO !== "1") {
+    return <p style={{ padding: 32 }}>Not available.</p>;
+  }
   return (
     <div className="flex min-h-screen bg-background">
       <Rail />
@@ -111,6 +115,7 @@ export default function QaDemoPage() {
           featureHref={() => "#"}
           planHref="#"
           testsHref="#"
+          showAddScenario
         />
       </main>
     </div>

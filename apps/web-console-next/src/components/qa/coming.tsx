@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 
 /**
  * A screen from the design whose feature ships in a later milestone. It shows
@@ -23,6 +23,8 @@ export function ComingScreen({
 }) {
   const params = useParams<{ orgSlug: string }>();
   const orgSlug = params?.orgSlug ?? "";
+  const hub = useSearchParams()?.get("hub");
+  const keep = hub ? `?hub=${encodeURIComponent(hub)}` : "";
   return (
     <div className="qa">
       <div style={{ marginBottom: 24 }}>
@@ -51,10 +53,10 @@ export function ComingScreen({
             Until then, the feature map is live:
           </span>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <Link className="btn primary" href={`/orgs/${orgSlug}/features`}>
+            <Link className="btn primary" href={`/orgs/${orgSlug}/features${keep}`}>
               Features
             </Link>
-            <Link className="btn" href={`/orgs/${orgSlug}/insights`}>
+            <Link className="btn" href={`/orgs/${orgSlug}/insights${keep}`}>
               Insights
             </Link>
           </div>

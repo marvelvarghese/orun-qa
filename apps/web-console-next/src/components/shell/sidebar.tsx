@@ -41,6 +41,8 @@ import { buildSettingsNav, flattenSettingsNav, isSettingsLinkActive } from "./se
 import { SidebarAccount } from "./sidebar-account";
 import { SidebarOrgSwitcher } from "./sidebar-org-switcher";
 import { SidebarFind } from "./sidebar-find";
+import { ScopeSwitcher } from "./scope-switcher";
+import { useSession } from "@/lib/session";
 
 const ICONS: Record<string, LucideIcon> = {
   LayoutGrid,
@@ -172,6 +174,17 @@ function ProductNav({
   }
   return (
     <nav className={cn("px-2 pb-4 pt-3", mobile ? "space-y-5" : "space-y-6")}>
+      {orgSlug && (
+        <SidebarLink
+          href={`/orgs/${orgSlug}/agent`}
+          icon={MessageSquare}
+          active={isLinkActive(`/orgs/${orgSlug}/agent`, pathname)}
+          onClick={onNavigate}
+          mobile={mobile}
+        >
+          Ask the agent
+        </SidebarLink>
+      )}
       {sections.map((section) => (
         <Section key={section.id} label={section.label} mobile={mobile}>
           {section.links.map((link) => {
@@ -267,6 +280,9 @@ export function Sidebar() {
       <div className="shrink-0 space-y-2 px-3 pb-3 pt-4">
         <SidebarOrgSwitcher />
         <SidebarFind />
+        {/* The desktop top bar is gone (the design has none): its scope switcher
+            and API target now live here. */}
+        <RailScope />
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">
@@ -353,5 +369,17 @@ function SidebarLink({
       <span className="min-w-0 flex-1 truncate">{children}</span>
       {chevron && <ChevronRight className={cn("shrink-0 opacity-50", mobile ? "h-4 w-4" : "h-3.5 w-3.5")} />}
     </Link>
+  );
+}
+
+function RailScope() {
+  const { target, isLocked } = useSession();
+  return (
+    <div className="flex flex-col gap-1.5 px-1 text-xs">
+      <ScopeSwitcher />
+      <span className="truncate text-[#6E6E68]" title={target.name}>
+        {isLocked ? "locked" : "target"} · {target.name}
+      </span>
+    </div>
   );
 }

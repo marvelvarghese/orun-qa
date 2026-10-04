@@ -39,9 +39,11 @@ export interface FeaturesViewProps {
   planHref: string;
   testsHref: string;
   onAddFeature?: () => void;
+  /** Scenarios arrive in QA2; until then the console hides "Add a scenario". */
+  showAddScenario?: boolean;
 }
 
-export function FeaturesView({ productName, features, areas, needsYou, lastCheck, featureHref, planHref, testsHref, onAddFeature }: FeaturesViewProps) {
+export function FeaturesView({ productName, features, areas, needsYou, lastCheck, featureHref, planHref, testsHref, onAddFeature, showAddScenario = false }: FeaturesViewProps) {
   const [filter, setFilter] = React.useState<FeatureHealth | "all">("all");
   const [query, setQuery] = React.useState("");
 
@@ -66,7 +68,7 @@ export function FeaturesView({ productName, features, areas, needsYou, lastCheck
             Every feature, shown working.
           </h1>
           <p className="muted" style={{ margin: "0 0 20px", fontSize: 17, maxWidth: 620 }}>
-            Each feature is checked every day and recorded the way a customer would use it. What you see here is what works today.
+            Every feature of the product, how each one connects to the rest, and — once scenarios run — the recording that proves it works.
           </p>
           {features.length > 0 && (
             <>
@@ -123,9 +125,11 @@ export function FeaturesView({ productName, features, areas, needsYou, lastCheck
             Search features
           </label>
           <input id="fsearch" type="search" placeholder="Search features" value={query} onChange={(e) => setQuery(e.target.value)} style={{ width: 260, borderRadius: 999 }} />
-          <Link className="btn" href={testsHref}>
-            Add a scenario
-          </Link>
+          {showAddScenario && (
+            <Link className="btn" href={testsHref}>
+              Add a scenario
+            </Link>
+          )}
           {onAddFeature ? (
             <button type="button" className="btn primary" onClick={onAddFeature}>
               Add a feature
@@ -222,7 +226,6 @@ function FeatureCard({ feature: f, href }: { feature: PublicFeature; href: strin
           </div>
         )}
         <div style={{ display: "flex", gap: 14, flexWrap: "wrap", fontSize: 13, color: "#6E6E68", marginTop: "auto", paddingTop: 6 }}>
-          <span>0 scenarios</span>
           <span>{f.specLinks.length > 0 ? f.specLinks.join(" · ") : "No spec linked"}</span>
         </div>
       </div>

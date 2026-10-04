@@ -51,19 +51,26 @@ function Inner({ orgId, orgSlug, hubId, hubName }: { orgId: string; orgSlug: str
             ))}
           </div>
         </div>
-      ) : map.error || !map.data ? (
+      ) : map.error ? (
         <div className="qa card" style={{ padding: 24 }}>
-          <div style={{ fontWeight: 700, color: "#A33A35" }}>{map.error?.code}</div>
-          <div className="muted">{map.error?.message}</div>
+          <div style={{ fontWeight: 700, color: "#A33A35" }}>{map.error.code}</div>
+          <div className="muted">{map.error.message}</div>
         </div>
+      ) : !map.data ? (
+        <div className="qa muted">Loading the feature map…</div>
       ) : (
         <FeaturesView
           productName={hubName}
           features={map.data.features}
           areas={map.data.areas}
-          needsYou={map.data.features
-            .filter((f) => f.health === "broken")
-            .map((f) => ({ kind: "bad" as const, label: "Broken", text: `${f.name} stopped working`, href: qaHref(orgSlug, `features/${f.id}`, hubId) }))}
+          needsYou={[
+            ...map.data.features
+              .filter((f) => f.health === "broken")
+              .map((f) => ({ kind: "bad" as const, label: "Broken", text: `${f.name} stopped working`, href: qaHref(orgSlug, `features/${f.id}`, hubId) })),
+            ...map.data.features
+              .filter((f) => f.health === "attention")
+              .map((f) => ({ kind: "warn" as const, label: "Attention", text: `${f.name} needs attention`, href: qaHref(orgSlug, `features/${f.id}`, hubId) })),
+          ]}
           lastCheck={null}
           featureHref={(id) => qaHref(orgSlug, `features/${id}`, hubId)}
           planHref={qaHref(orgSlug, "plan", hubId)}

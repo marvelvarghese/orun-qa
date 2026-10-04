@@ -2,8 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { ChevronsUpDown, LogOut, User2, ShieldCheck, Sun, Moon } from "lucide-react";
-import { useTheme } from "next-themes";
+import { ChevronsUpDown, LogOut, User2, ShieldCheck } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -28,7 +27,6 @@ import { cn } from "@/lib/cn";
 export function SidebarAccount() {
   const router = useRouter();
   const { client, setToken } = useSession();
-  const { theme, setTheme } = useTheme();
   const profile = useApiQuery(qk.profile(), () =>
     wrap(async () => (await client.auth.getProfile()).user),
   );
@@ -76,15 +74,6 @@ export function SidebarAccount() {
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => router.push("/account/security")}>
           <ShieldCheck className="h-4 w-4 opacity-70" /> Security activity
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          onSelect={(e) => {
-            e.preventDefault();
-            setTheme(theme === "dark" ? "light" : "dark");
-          }}
-        >
-          {theme === "dark" ? <Sun className="h-4 w-4 opacity-70" /> : <Moon className="h-4 w-4 opacity-70" />}
-          {theme === "dark" ? "Light mode" : "Dark mode"}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem
