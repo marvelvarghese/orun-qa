@@ -374,9 +374,15 @@ function SidebarLink({
 
 function RailScope() {
   const { target, isLocked } = useSession();
+  const params = useParams<{ projectSlug?: string }>();
   return (
-    <div className="flex flex-col gap-1.5 px-1 text-xs">
-      <ScopeSwitcher />
+    <div className="flex min-w-0 flex-col gap-1.5 overflow-hidden px-1 text-xs">
+      {/* The crumbs only matter inside a project; there they wrap to the rail's width. */}
+      {params?.projectSlug && (
+        <div className="min-w-0 max-w-full overflow-hidden [&_*]:max-w-full [&_*]:min-w-0 [&>*]:flex-wrap">
+          <ScopeSwitcher />
+        </div>
+      )}
       <span className="truncate text-[#6E6E68]" title={target.name}>
         {isLocked ? "locked" : "target"} · {target.name}
       </span>

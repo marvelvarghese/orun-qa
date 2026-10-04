@@ -57,7 +57,7 @@ function Inner({ orgId, orgSlug, hubId, hubName }: { orgId: string; orgSlug: str
           <div className="muted">{map.error.message}</div>
         </div>
       ) : !map.data ? (
-        <div className="qa muted">Loading the feature map…</div>
+        <div className="qa muted">No feature map to show.</div>
       ) : (
         <FeaturesView
           productName={hubName}
