@@ -38,6 +38,7 @@ function Inner({ orgId, orgSlug, hubId, hubName, hubSlug }: { orgId: string; org
   const { toast } = useToast();
   const map = useApiQuery(qk.qaMap(orgId, hubId), () => wrap(() => client.qa.getMap(orgId, hubId)));
   const [open, setOpen] = React.useState(false);
+  const [importing, setImporting] = React.useState(false);
 
   return (
     <>
@@ -79,13 +80,17 @@ function Inner({ orgId, orgSlug, hubId, hubName, hubSlug }: { orgId: string; org
           onImportSelf={
             hubSlug === "orun-qa"
               ? async () => {
+                  if (importing) return;
+                  setImporting(true);
                   const r = await wrap(() => setUpSelfHub(client, orgId));
+                  setImporting(false);
                   map.reload();
                   if (!r.ok) toast({ kind: "error", title: "Import failed", description: r.error.message });
                   else toast({ kind: "success", title: `Imported · ${r.data.created} new features` });
                 }
               : undefined
           }
+          importing={importing}
         />
       )}
       <Dialog open={open} onOpenChange={setOpen}>

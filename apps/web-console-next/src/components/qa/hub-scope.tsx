@@ -15,15 +15,15 @@ import { useApiQuery, qk } from "@/lib/query";
 import { wrap } from "@/lib/api";
 
 /**
- * The addresses Orun QA's own scenarios run against: the console this hub is set
- * up from, on stage or prod. Set NEXT_PUBLIC_QA_SELF_STAGE_URL / _PROD_URL to
- * override; otherwise the current origin fills the slot its name suggests.
+ * The addresses Orun QA's own scenarios run against, from build configuration
+ * (NEXT_PUBLIC_QA_SELF_STAGE_URL / _PROD_URL). Unset, the hub starts without
+ * them and the PM adds them in the hub's settings.
  */
 function selfAddresses(): { stageUrl: string | null; prodUrl: string | null } {
-  const origin = typeof window === "undefined" ? null : window.location.origin;
-  const stage = process.env.NEXT_PUBLIC_QA_SELF_STAGE_URL || (origin && /stage/i.test(origin) ? origin : null);
-  const prod = process.env.NEXT_PUBLIC_QA_SELF_PROD_URL || (origin && /prod/i.test(origin) ? origin : null);
-  return { stageUrl: stage, prodUrl: prod };
+  return {
+    stageUrl: process.env.NEXT_PUBLIC_QA_SELF_STAGE_URL || null,
+    prodUrl: process.env.NEXT_PUBLIC_QA_SELF_PROD_URL || null,
+  };
 }
 
 /** Create Orun QA's own hub, or reuse it if an earlier attempt got that far, then import its manifest. */

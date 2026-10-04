@@ -39,13 +39,14 @@ export interface FeaturesViewProps {
   planHref: string;
   testsHref: string;
   onAddFeature?: () => void;
-  /** On Orun QA's own hub, a way to (re)load its features from the manifest. */
+  /** On Orun QA's own hub, a way to (re)load its features from the manifest. Always offered there, so a partial import can be finished. */
   onImportSelf?: (() => void) | undefined;
+  importing?: boolean;
   /** Scenarios arrive in QA2; until then the console hides "Add a scenario". */
   showAddScenario?: boolean;
 }
 
-export function FeaturesView({ productName, features, areas, needsYou, lastCheck, featureHref, planHref, testsHref, onAddFeature, onImportSelf, showAddScenario = false }: FeaturesViewProps) {
+export function FeaturesView({ productName, features, areas, needsYou, lastCheck, featureHref, planHref, testsHref, onAddFeature, onImportSelf, importing = false, showAddScenario = false }: FeaturesViewProps) {
   const [filter, setFilter] = React.useState<FeatureHealth | "all">("all");
   const [query, setQuery] = React.useState("");
 
@@ -127,6 +128,11 @@ export function FeaturesView({ productName, features, areas, needsYou, lastCheck
             Search features
           </label>
           <input id="fsearch" type="search" placeholder="Search features" value={query} onChange={(e) => setQuery(e.target.value)} style={{ width: 260, borderRadius: 999 }} />
+          {onImportSelf && features.length > 0 && (
+            <button type="button" className="btn" onClick={onImportSelf} disabled={importing}>
+              {importing ? "Importing…" : "Re-import Orun QA's features"}
+            </button>
+          )}
           {showAddScenario && (
             <Link className="btn" href={testsHref}>
               Add a scenario
@@ -154,8 +160,8 @@ export function FeaturesView({ productName, features, areas, needsYou, lastCheck
           </p>
           <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
             {onImportSelf && (
-              <button type="button" className="btn gold" onClick={onImportSelf}>
-                Import Orun QA&rsquo;s own features
+              <button type="button" className="btn gold" onClick={onImportSelf} disabled={importing}>
+                {importing ? "Importing…" : "Import Orun QA\u2019s own features"}
               </button>
             )}
             {onAddFeature && (
