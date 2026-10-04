@@ -50,7 +50,10 @@
         }
       ],
       "services": [
-        // @cycle-break:billing-worker->membership-worker:ewogICAgICAgICAgImJpbmRpbmciOiAiTUVNQkVSU0hJUF9XT1JLRVIiLAogICAgICAgICAgInNlcnZpY2UiOiAib3J1bi1xYS1tZW1iZXJzaGlwLXdvcmtlci1zdGFnZSIKICAgICAgICB9LA==
+        {
+          "binding": "MEMBERSHIP_WORKER",
+          "service": "orun-qa-membership-worker-stage"
+        },
         {
           "binding": "POLICY_WORKER",
           "service": "orun-qa-policy-worker-stage"
@@ -73,7 +76,10 @@
         }
       ],
       "services": [
-        // @cycle-break:billing-worker->membership-worker:ewogICAgICAgICAgImJpbmRpbmciOiAiTUVNQkVSU0hJUF9XT1JLRVIiLAogICAgICAgICAgInNlcnZpY2UiOiAib3J1bi1xYS1tZW1iZXJzaGlwLXdvcmtlci1wcm9kIgogICAgICAgIH0s
+        {
+          "binding": "MEMBERSHIP_WORKER",
+          "service": "orun-qa-membership-worker-prod"
+        },
         {
           "binding": "POLICY_WORKER",
           "service": "orun-qa-policy-worker-prod"
