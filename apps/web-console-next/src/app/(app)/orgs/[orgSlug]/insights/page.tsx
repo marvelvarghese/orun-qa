@@ -84,7 +84,6 @@ function Inner({ orgId, orgSlug, hubId }: { orgId: string; orgSlug: string; hubI
             : "none";
   const layout = layoutMap(data.features, data.edges, data.areas.map((a) => a.id));
   const pending = data.edges.filter((e) => !e.confirmed);
-  const names = (ids: string[]) => ids.map((id) => byId.get(id)?.name ?? "A feature");
 
   const edgeColor = (from: string, to: string, confirmed: boolean) => {
     if (!confirmed) return "#8A857A";
@@ -134,9 +133,6 @@ function Inner({ orgId, orgSlug, hubId }: { orgId: string; orgSlug: string; hubI
             How the features lean on each other
           </h1>
         </div>
-        <Link className="btn" href={qaHref(orgSlug, `features/${current}`, hubId)}>
-          Open feature
-        </Link>
       </div>
 
       <section className="card" style={{ padding: "20px 12px", marginBottom: 24 }}>
@@ -230,10 +226,10 @@ function Inner({ orgId, orgSlug, hubId }: { orgId: string; orgSlug: string; hubI
             </div>
           ) : (
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-              {names(ripple.reliesOn).map((n) => (
-                <span key={n} className="pill ok">
+              {ripple.reliesOn.map((id) => (
+                <span key={id} className="pill ok">
                   <i />
-                  {n}
+                  {byId.get(id)?.name ?? "A feature"}
                 </span>
               ))}
             </div>
@@ -249,16 +245,16 @@ function Inner({ orgId, orgSlug, hubId }: { orgId: string; orgSlug: string; hubI
             </div>
           ) : (
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-              {names(ripple.breaksDirectly).map((n) => (
-                <span key={`d-${n}`} className="pill bad">
+              {ripple.breaksDirectly.map((id) => (
+                <span key={`d-${id}`} className="pill bad">
                   <i />
-                  {n}
+                  {byId.get(id)?.name ?? "A feature"}
                 </span>
               ))}
-              {names(ripple.breaksNext).map((n) => (
-                <span key={`n-${n}`} className="pill warn">
+              {ripple.breaksNext.map((id) => (
+                <span key={`n-${id}`} className="pill warn">
                   <i />
-                  {n}
+                  {byId.get(id)?.name ?? "A feature"}
                 </span>
               ))}
             </div>

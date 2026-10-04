@@ -195,16 +195,18 @@ export function FeatureView({ feature, ripple, areas, names, featuresHref, featu
           <div className="card" style={{ padding: 20, display: "flex", flexDirection: "column", gap: 12 }}>
             <div className="eyebrow">People and links</div>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 14 }}>
-              <span className="muted">Product owner</span>
-              <span style={{ fontWeight: 600 }}>{feature.ownerUserId ?? "Not set"}</span>
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 14 }}>
-              <span className="muted">QA</span>
-              <span style={{ fontWeight: 600 }}>{feature.qaUserId ?? "Not set"}</span>
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 14 }}>
               <span className="muted">Spec</span>
-              {feature.specLinks.length > 0 ? <span className="pill neutral">{feature.specLinks.join(" · ")}</span> : <span className="muted">None linked</span>}
+              {feature.specLinks.length > 0 ? (
+                <span style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end", minWidth: 0 }}>
+                  {feature.specLinks.map((l) => (
+                    <span key={l} className="pill neutral" title={l} style={{ maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", display: "inline-block", lineHeight: "24px" }}>
+                      {l}
+                    </span>
+                  ))}
+                </span>
+              ) : (
+                <span className="muted">None linked</span>
+              )}
             </div>
             {feature.codeRefs.length > 0 && (
               <div style={{ fontSize: 14 }}>
