@@ -16,7 +16,9 @@ import type { AuthorizationRequest, MembershipFact, TenancyRole } from "@saas/co
 // membership and policy workers do.
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const QA_SQL = readFileSync(resolve(__dirname, "../../..", "packages/db/src/migrations/200_qa_feature_map/up.sql"), "utf8");
+const QA_SQL = ["200_qa_feature_map", "210_qa_feature_name_active"]
+  .map((m) => readFileSync(resolve(__dirname, "../../..", `packages/db/src/migrations/${m}/up.sql`), "utf8"))
+  .join("\n");
 
 const ORG_UUID = "11111111-1111-1111-1111-111111111111";
 const ORG = "org_11111111111111111111111111111111";
@@ -215,6 +217,47 @@ describe("qa-worker", () => {
     const after = await t.call("GET", `/v1/organizations/${ORG}/qa/hubs/${hubId}/map`);
     expect(after.data!.features).toHaveLength(5);
     expect(after.data!.edges).toHaveLength(2);
+  });
+
+  it("never lets a builder's edge confirm itself, and lets a builder withdraw only unconfirmed edges", async () => {
+    const t = await harness();
+    const { hubId, ids } = await hubWithFeatures(t, ["A", "B", "C"]);
+    const base = `/v1/organizations/${ORG}/qa/hubs/${hubId}/edges`;
+    const pmEdge = await t.call("POST", base, { from: ids.A, to: ids.B });
+    expect(pmEdge.data!.edge.confirmed).toBe(true);
+
+    t.state.role = "builder";
+    const mine = await t.call("POST", base, { from: ids.B, to: ids.C });
+    expect(mine.status).toBe(201);
+    expect(mine.data!.edge.confirmed).toBe(false);
+    // A confirmed edge is the PM's to remove; the builder's own proposal can go.
+    expect((await t.call("DELETE", `${base}/${pmEdge.data!.edge.id}`)).status).toBe(404);
+    expect((await t.call("DELETE", `${base}/${mine.data!.edge.id}`)).status).toBe(200);
+  });
+
+  it("validates edits: empty slug means derive, empty name is refused, owner '' clears, position is capped", async () => {
+    const t = await harness();
+    const hub = await t.call("POST", `/v1/organizations/${ORG}/qa/hubs`, { name: "Billing Hub", slug: "" });
+    expect(hub.status).toBe(201);
+    expect(hub.data!.hub.slug).toBe("billing-hub");
+    const hubId = hub.data!.hub.id as string;
+    const f = await t.call("POST", `/v1/organizations/${ORG}/qa/hubs/${hubId}/features`, { name: "Invoices", ownerUserId: "usr_pm" });
+    const path = `/v1/organizations/${ORG}/qa/hubs/${hubId}/features/${f.data!.feature.id}`;
+    expect((await t.call("PATCH", path, { name: "   " })).status).toBe(422);
+    const cleared = await t.call("PATCH", path, { ownerUserId: "" });
+    expect(cleared.data!.feature.ownerUserId).toBeNull();
+    expect((await t.call("POST", `/v1/organizations/${ORG}/qa/hubs/${hubId}/areas`, { name: "Big", position: 1e12 })).status).toBe(422);
+  });
+
+  it("leaves archived features out of a feature's ripple", async () => {
+    const t = await harness();
+    const { hubId, ids } = await hubWithFeatures(t, ["Archive a project", "Activity feed", "Task board"]);
+    const base = `/v1/organizations/${ORG}/qa/hubs/${hubId}`;
+    await t.call("POST", `${base}/edges`, { from: ids["Archive a project"], to: ids["Activity feed"] });
+    await t.call("POST", `${base}/edges`, { from: ids["Archive a project"], to: ids["Task board"] });
+    await t.call("PATCH", `${base}/features/${ids["Activity feed"]}`, { status: "archived" });
+    const page = await t.call("GET", `${base}/features/${ids["Archive a project"]}`);
+    expect(page.data!.ripple.breaksDirectly).toEqual([ids["Task board"]]);
   });
 
   it("deletes an edge once", async () => {

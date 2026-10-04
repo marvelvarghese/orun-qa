@@ -192,5 +192,14 @@ export const manifest: MigrationManifest = {
       description:
         "Orun QA feature map — the qa schema: hubs, areas, features and the dependency edges between them (QA1)",
     },
+    {
+      id: "210_qa_feature_name_active",
+      context: "qa",
+      path: "210_qa_feature_name_active/up.sql",
+      checksum:
+        "c7339df206769f88bfe2f4a6881bb3762288a2618e1466d73855e9d4b16ca953",
+      description:
+        "Orun QA — feature names unique among a hub's active features only (QA1 review)",
+    },
   ],
 };

@@ -7,7 +7,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { ChevronRight, Film } from "lucide-react";
 import type { FeatureMap, PublicFeature } from "@saas/contracts/qa";
 import { OrgScope } from "@/components/shell/org-scope";
-import { HubScope } from "@/components/qa/hub-scope";
+import { HubScope, qaHref } from "@/components/qa/hub-scope";
 import { HealthBadge } from "@/components/qa/health";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -32,14 +32,14 @@ export default function FeaturePage() {
   );
 }
 
-function FeatureLinks({ ids, map, orgSlug, empty, tone }: { ids: string[]; map: FeatureMap | null; orgSlug: string; empty: string; tone: string }) {
+function FeatureLinks({ ids, map, orgSlug, hubId, empty, tone }: { ids: string[]; map: FeatureMap | null; orgSlug: string; hubId: string; empty: string; tone: string }) {
   if (ids.length === 0) return <p className="text-sm text-muted-foreground">{empty}</p>;
   const byId = new Map((map?.features ?? []).map((f) => [f.id, f]));
   return (
     <ul className="flex flex-wrap gap-2">
       {ids.map((id) => (
         <li key={id}>
-          <Link href={`/orgs/${orgSlug}/features/${id}`} className={`inline-flex h-9 items-center rounded-full border px-3 text-sm ${tone}`}>
+          <Link href={qaHref(orgSlug, `features/${id}`, hubId)} className={`inline-flex h-9 items-center rounded-full border px-3 text-sm ${tone}`}>
             {byId.get(id)?.name ?? "A feature"}
           </Link>
         </li>
@@ -101,7 +101,7 @@ function Inner({ orgId, orgSlug, hubId, featureId }: { orgId: string; orgSlug: s
   return (
     <div className="space-y-6">
       <nav aria-label="Breadcrumb" className="flex items-center gap-1 text-sm text-muted-foreground">
-        <Link href={`/orgs/${orgSlug}/features`} className="hover:text-foreground">
+        <Link href={qaHref(orgSlug, "features", hubId)} className="hover:text-foreground">
           Features
         </Link>
         <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
@@ -128,17 +128,17 @@ function Inner({ orgId, orgSlug, hubId, featureId }: { orgId: string; orgSlug: s
             <CardContent className="space-y-4">
               <div className="space-y-2">
                 <h3 className="text-sm font-medium">Breaks directly</h3>
-                <FeatureLinks ids={ripple.breaksDirectly} map={map.data} orgSlug={orgSlug} empty="Nothing else needs this feature." tone="border-destructive/40 bg-destructive/10" />
+                <FeatureLinks ids={ripple.breaksDirectly} map={map.data} orgSlug={orgSlug} hubId={hubId} empty="Nothing else needs this feature." tone="border-destructive/40 bg-destructive/10" />
               </div>
               <div className="space-y-2">
                 <h3 className="text-sm font-medium">Breaks next</h3>
-                <FeatureLinks ids={ripple.breaksNext} map={map.data} orgSlug={orgSlug} empty="No knock-on effects." tone="border-warning/40 bg-warning/10" />
+                <FeatureLinks ids={ripple.breaksNext} map={map.data} orgSlug={orgSlug} hubId={hubId} empty="No knock-on effects." tone="border-warning/40 bg-warning/10" />
               </div>
               <div className="space-y-2">
                 <h3 className="text-sm font-medium">It relies on</h3>
-                <FeatureLinks ids={ripple.reliesOn} map={map.data} orgSlug={orgSlug} empty="Nothing. This is a foundation." tone="border-success/40 bg-success/10" />
+                <FeatureLinks ids={ripple.reliesOn} map={map.data} orgSlug={orgSlug} hubId={hubId} empty="Nothing. This is a foundation." tone="border-success/40 bg-success/10" />
               </div>
-              <Link href={`/orgs/${orgSlug}/insights?feature=${feature.id}`} className="inline-block text-sm text-primary hover:underline">
+              <Link href={qaHref(orgSlug, "insights", hubId, { feature: feature.id })} className="inline-block text-sm text-primary hover:underline">
                 See it on the map
               </Link>
             </CardContent>

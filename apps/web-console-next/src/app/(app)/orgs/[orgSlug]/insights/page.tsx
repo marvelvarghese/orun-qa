@@ -2,11 +2,11 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { Network } from "lucide-react";
 import { computeRipple, type FeatureMap } from "@saas/contracts/qa";
 import { OrgScope } from "@/components/shell/org-scope";
-import { HubScope } from "@/components/qa/hub-scope";
+import { HubScope, qaHref } from "@/components/qa/hub-scope";
 import { HealthBadge } from "@/components/qa/health";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -43,7 +43,7 @@ function Inner({ orgId, orgSlug, hubId }: { orgId: string; orgSlug: string; hubI
   const { client } = useSession();
   const { toast } = useToast();
   const map = useApiQuery(qk.qaMap(orgId, hubId), () => wrap(() => client.qa.getMap(orgId, hubId)));
-  const initial = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("feature");
+  const initial = useSearchParams()?.get("feature") ?? null;
   const [selected, setSelected] = React.useState<string | null>(initial);
   const [from, setFrom] = React.useState("");
   const [to, setTo] = React.useState("");
@@ -68,7 +68,7 @@ function Inner({ orgId, orgSlug, hubId }: { orgId: string; orgSlug: string; hubI
         icon={Network}
         title="Nothing to map yet"
         description="Add features first; then link the ones that depend on each other."
-        primaryAction={{ label: "Go to Features", href: `/orgs/${orgSlug}/features` }}
+        primaryAction={{ label: "Go to Features", href: qaHref(orgSlug, "features", hubId) }}
       />
     );
   }
@@ -189,7 +189,7 @@ function Inner({ orgId, orgSlug, hubId }: { orgId: string; orgSlug: string; hubI
           <CardContent className="flex items-center justify-between gap-2">
             <HealthBadge health={byId.get(current)!.health} />
             <Button size="sm" variant="secondary" asChild>
-              <Link href={`/orgs/${orgSlug}/features/${current}`}>Open feature</Link>
+              <Link href={qaHref(orgSlug, `features/${current}`, hubId)}>Open feature</Link>
             </Button>
           </CardContent>
         </Card>
@@ -240,7 +240,10 @@ function Inner({ orgId, orgSlug, hubId }: { orgId: string; orgSlug: string; hubI
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <label htmlFor="link-to" className="text-sm font-medium">This feature</label>
-                <select id="link-to" value={to} onChange={(e) => setTo(e.target.value)} className="h-10 w-full rounded-md border bg-background px-3 text-sm">
+                <select id="link-to" value={to} onChange={(e) => {
+                    setTo(e.target.value);
+                    if (e.target.value === from) setFrom("");
+                  }} className="h-10 w-full rounded-md border bg-background px-3 text-sm">
                   <option value="">Choose…</option>
                   {data.features.map((f) => (
                     <option key={f.id} value={f.id}>{f.name}</option>

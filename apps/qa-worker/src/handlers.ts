@@ -219,11 +219,13 @@ export async function createHub(ctx: Ctx, request: Request): Promise<Response> {
   if (!body) return validationError(ctx.requestId, { body: ["Request body must be a JSON object"] });
   const fields: Fields = {};
   const name = str(fields, body, "name", { required: true, max: QA_LIMITS.nameMax });
-  const slugIn = str(fields, body, "slug", { max: 63 });
+  const slugRaw = str(fields, body, "slug", { max: 63 });
+  const slugIn = slugRaw === "" ? undefined : slugRaw;
   const stageUrl = optUrl(fields, body, "stageUrl");
   const prodUrl = optUrl(fields, body, "prodUrl");
   const slug = slugIn ?? (name ? slugify(name) : "");
-  if (slug && !SLUG_RE.test(slug)) (fields.slug ??= []).push("Lowercase letters, digits and dashes");
+  // A slug the caller gave is always checked; a derived one only once there is a name to derive from.
+  if ((slugIn !== undefined || name) && !SLUG_RE.test(slug)) (fields.slug ??= []).push("Lowercase letters, digits and dashes");
   if (Object.keys(fields).length > 0) return validationError(ctx.requestId, fields);
 
   return withRepo(ctx, "qa.hub.manage", async (repo) => {
@@ -264,7 +266,9 @@ export async function createArea(ctx: Ctx, hubId: string, request: Request): Pro
   const fields: Fields = {};
   const name = str(fields, body, "name", { required: true, max: QA_LIMITS.nameMax });
   const position = body.position === undefined ? 0 : body.position;
-  if (typeof position !== "number" || !Number.isInteger(position) || position < 0) (fields.position ??= []).push("A whole number, 0 or more");
+  if (typeof position !== "number" || !Number.isInteger(position) || position < 0 || position > QA_LIMITS.positionMax) {
+    (fields.position ??= []).push(`A whole number from 0 to ${QA_LIMITS.positionMax}`);
+  }
   if (Object.keys(fields).length > 0) return validationError(ctx.requestId, fields);
 
   return withRepo(ctx, "qa.feature.write", async (repo) => {
@@ -293,6 +297,7 @@ function parseFeatureBody(body: Record<string, unknown>, creating: boolean): { o
   const fields: Fields = {};
   const value: FeatureFields = {};
   value.name = str(fields, body, "name", { required: creating, max: QA_LIMITS.nameMax });
+  if (!creating && value.name !== undefined && value.name.length === 0) (fields.name ??= []).push("Must not be empty");
   value.description = str(fields, body, "description", { max: QA_LIMITS.descriptionMax });
   if (body.areaId !== undefined) {
     if (body.areaId === null) value.areaId = null;
@@ -306,7 +311,7 @@ function parseFeatureBody(body: Record<string, unknown>, creating: boolean): { o
     if (body[key] === null) value[key] = null;
     else {
       const v = str(fields, body, key, { max: 128 });
-      if (v !== undefined) value[key] = v;
+      if (v !== undefined) value[key] = v === "" ? null : v;
     }
   }
   if (body.public !== undefined) {
@@ -362,11 +367,18 @@ export async function createFeature(ctx: Ctx, hubId: string, request: Request): 
 
 export function getFeature(ctx: Ctx, hubId: string, featureId: string): Promise<Response> {
   return withRepo(ctx, "qa.feature.read", async (repo) => {
-    const [feature, edges] = await Promise.all([repo.getFeature(ctx.orgId, hubId, featureId), repo.listEdges(ctx.orgId, hubId)]);
+    const [feature, edges, active] = await Promise.all([
+      repo.getFeature(ctx.orgId, hubId, featureId),
+      repo.listEdges(ctx.orgId, hubId),
+      repo.listFeatures(ctx.orgId, hubId),
+    ]);
     if (!feature.ok) return fromRepoError(feature.error, ctx.requestId);
     if (!edges.ok) return fromRepoError(edges.error, ctx.requestId);
+    if (!active.ok) return fromRepoError(active.error, ctx.requestId);
     const pub = publicFeature(feature.value);
-    const ripple = computeRipple(pub.id, edges.value.map(publicEdge));
+    // Same rule as the map: an archived feature, and its edges, are off the map.
+    const live = new Set(active.value.map((f) => f.id));
+    const ripple = computeRipple(pub.id, edges.value.filter((e) => live.has(e.fromFeatureId) && live.has(e.toFeatureId)).map(publicEdge));
     return successResponse({ feature: pub, ripple }, ctx.requestId);
   });
 }
@@ -425,6 +437,9 @@ export async function createEdge(ctx: Ctx, hubId: string, request: Request): Pro
   if (Object.keys(fields).length > 0) return validationError(ctx.requestId, fields);
 
   return withRepo(ctx, "qa.map.write", async (repo) => {
+    // A person's edge confirms itself only when that person may confirm (the PM).
+    // A builder's edge, like an agent's, waits for confirmation.
+    const confirms = source === "human" && (await allowed(ctx, "qa.feature.write"));
     const r = await repo.createEdge({
       id: nextId(ctx),
       orgId: ctx.orgId,
@@ -432,7 +447,7 @@ export async function createEdge(ctx: Ctx, hubId: string, request: Request): Pro
       fromFeatureId: from!,
       toFeatureId: to!,
       source: source as "human" | "agent",
-      confirmedBy: source === "human" ? ctx.actor.subjectId : null,
+      confirmedBy: confirms ? ctx.actor.subjectId : null,
       createdAt: now(ctx),
     });
     return r.ok ? successResponse({ edge: publicEdge(r.value) }, ctx.requestId, 201) : fromRepoError(r.error, ctx.requestId);
@@ -447,7 +462,15 @@ export function confirmEdge(ctx: Ctx, hubId: string, edgeId: string): Promise<Re
 }
 
 export function deleteEdge(ctx: Ctx, hubId: string, edgeId: string): Promise<Response> {
-  return withRepo(ctx, "qa.feature.write", async (repo) => {
+  return withRepo(ctx, "qa.map.write", async (repo) => {
+    // The PM removes any edge; anyone who may propose edges may withdraw one that
+    // is still unconfirmed. A confirmed edge is the PM's to remove.
+    if (!(await allowed(ctx, "qa.feature.write"))) {
+      const edges = await repo.listEdges(ctx.orgId, hubId);
+      if (!edges.ok) return fromRepoError(edges.error, ctx.requestId);
+      const edge = edges.value.find((e) => e.id === edgeId);
+      if (!edge || edge.confirmedAt !== null) return notFound(ctx.requestId);
+    }
     const r = await repo.deleteEdge(ctx.orgId, hubId, edgeId);
     return r.ok ? successResponse({ deleted: true }, ctx.requestId) : fromRepoError(r.error, ctx.requestId);
   });

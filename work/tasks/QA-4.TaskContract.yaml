@@ -1,0 +1,19 @@
+apiVersion: orun.io/v1
+kind: TaskContract
+metadata:
+  name: QA-4
+spec:
+  goal: The QA1 code review's findings are fixed — edges confirm only by the PM, builders withdraw only their unconfirmed edges, archived features leave every ripple, input validation holds on create and edit, names free up on archive, the console keeps the selected hub — and the plan moves the Orunbase integration to its own milestone.
+  affects:
+    - default/orun-qa/qa-worker
+    - default/orun-qa/qa-worker-tests
+    - default/orun-qa/db
+    - default/orun-qa/db-migrate
+    - default/orun-qa/db-tests
+    - default/orun-qa/contracts
+    - default/orun-qa/web-console-next
+  doneWhen:
+    - migration 210_qa_feature_name_active is applied on stage and prod
+    - a builder's new edge reads unconfirmed, and the PM's reads confirmed
+    - the qa-worker, db and web-console-next test lanes are green
+  gates: []

@@ -14,14 +14,13 @@ This doc set, merged to `main` and attached to the epic with `orun spec push`.
 
 ## QA1 — the feature map
 
-On the bootstrapped lumen repository: `apps/qa-worker` with `component.yaml`, the `qa` schema migration for hub, area, feature and feature_edge, routes behind `api-edge`, contracts and sdk types. The `orunbase` provider in `integrations-worker` (connect a workspace, read its catalog) and Sign in with Orunbase. The Features home, the Feature page (no recordings yet) and the Insights dependency map. The agent scan drafts features and edges from the repo for a person to confirm.
+On the bootstrapped lumen repository: `apps/qa-worker` with `component.yaml`, the `qa` schema migration for hub, area, feature and feature_edge, routes behind `api-edge`, contracts and sdk types. The Features home, the Feature page (no recordings yet) and the Insights dependency map. Orun QA's own workspace is the default: it holds a hub for Orun QA itself, filled from a feature manifest in this repository, so the product tests itself from the first milestone.
 
 **Done when**
 - `qa-worker` answers `/health` on stage and prod, and its migrations applied on both
-- a user signs in with Orunbase, connects an Orunbase workspace, and the hub seeds features from its catalog
-- a non-member of the Orun QA organization gets 404 on its hubs
+- a member of a workspace sees its hub; a non-member gets 404
 - the Features home, Feature page and Insights map render from real rows
-- Orun QA's own hub lists the QA1 features with their edges, as "Not tested yet"
+- Orun QA's own workspace lists Orun QA's own features with their edges, as "Not tested yet"
 
 ## QA2 — scenarios that run and record
 
@@ -66,6 +65,15 @@ Ask the agent, grounded on the hub's features, scenarios and bugs. `apps/mcp-wor
 - verify over MCP requires a person's approval before it runs
 - an anonymous visitor browses the public tour; a broken feature shows its last verified recording
 - Orun QA's own public tour shows Orun QA, recorded by itself
+
+## QA6 — the Orunbase integration
+
+Moved here from QA1: Orun QA is built as an independent product first. Sign in with Orunbase (OAuth), the `orunbase` provider in `integrations-worker` (connect a workspace, read its catalog and runs), seeding a hub from that catalog, the run webhook that starts a stage run after each deploy, and resolving the connected workspace's production approval from the release review.
+
+**Done when**
+- a user signs in with Orunbase and connects a workspace to a hub
+- a hub seeds its features from that workspace's catalog
+- prod promotion in the connected workspace waits on the hub's release review
 
 ## Sequencing note
 
