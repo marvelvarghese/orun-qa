@@ -35,7 +35,7 @@ describe("buildNavSections", () => {
     expect(hrefs).toContain("/orgs/acme/projects");
     expect(hrefs).toContain("/orgs/acme/usage");
     expect(hrefs).toContain("/orgs/acme/settings");
-    expect(org.label).toBe("Org · acme");
+    expect(org.label).toBe("Workspace · acme");
   });
 
   it("keeps org administration out of the primary sidebar (moved under Settings)", () => {
@@ -75,16 +75,15 @@ describe("buildNavSections under the Solo (M0) profile", () => {
     expect(sections.find((s) => s.id === "project")).toBeUndefined();
   });
 
-  it("keeps the full baseline section when soloMode is false", () => {
-    const org = buildNavSections({ orgSlug: "acme" }, false).find((s) => s.id === "org")!;
-    expect(org.label).toBe("Org · acme");
-    expect(org.links.map((l) => l.href)).toEqual([
-      "/orgs/acme/features",
-      "/orgs/acme/insights",
-      "/orgs/acme/projects",
-      "/orgs/acme/usage",
-      "/orgs/acme/settings",
-    ]);
+  it("lays out the design's rail when soloMode is false: Product, Testing, then Workspace", () => {
+    const sections = buildNavSections({ orgSlug: "acme" }, false);
+    expect(sections.map((s) => s.id)).toEqual(["product", "testing", "org"]);
+    const hrefs = (id: string) => sections.find((s) => s.id === id)!.links.map((l) => l.href);
+    expect(hrefs("product")).toEqual(["/orgs/acme/features", "/orgs/acme/reviews", "/orgs/acme/bugs", "/orgs/acme/insights"]);
+    expect(hrefs("testing")).toEqual(["/orgs/acme/plan", "/orgs/acme/tests", "/orgs/acme/try", "/orgs/acme/desk"]);
+    const org = sections.find((s) => s.id === "org")!;
+    expect(org.label).toBe("Workspace · acme");
+    expect(org.links.map((l) => l.href)).toEqual(["/orgs/acme/projects", "/orgs/acme/usage", "/orgs/acme/settings"]);
   });
 });
 

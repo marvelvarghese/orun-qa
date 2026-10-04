@@ -3,7 +3,6 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
-import { useTheme } from "next-themes";
 import { Check, Loader2 } from "lucide-react";
 import type { GetBillingSummaryResponse, ListPlansResponse, PublicPlan } from "@saas/contracts/billing";
 import { Button } from "@/components/ui/button";
@@ -47,7 +46,6 @@ export function ChangePlanCards({ orgId, orgSlug }: { orgId: string; orgSlug: st
   const { client } = useSession();
   const { toast } = useToast();
   const qc = useQueryClient();
-  const { resolvedTheme } = useTheme();
 
   const plansQ = useApiQuery<ListPlansResponse>(["billing", "plans", orgId], () =>
     wrap(() => client.billing.listPlans(orgId)),
@@ -149,7 +147,8 @@ export function ChangePlanCards({ orgId, orgSlug }: { orgId: string; orgSlug: st
     }
     try {
       const { PolarEmbedCheckout } = await import("@polar-sh/checkout/embed");
-      const theme = resolvedTheme === "light" ? "light" : "dark";
+      // The console is light only (providers.tsx forces it), so checkout matches.
+      const theme = "light" as const;
       const checkout = await PolarEmbedCheckout.create(r.data.checkoutUrl, { theme });
       checkout.addEventListener("success", () => {
         checkout.close();
@@ -159,7 +158,7 @@ export function ChangePlanCards({ orgId, orgSlug }: { orgId: string; orgSlug: st
     } catch {
       window.location.assign(r.data.checkoutUrl);
     }
-  }, [selectedPlan, action, client, orgId, currentCode, billingPath, resolvedTheme, refreshAndReturn, toast]);
+  }, [selectedPlan, action, client, orgId, currentCode, billingPath, refreshAndReturn, toast]);
 
   if (loading) {
     return (

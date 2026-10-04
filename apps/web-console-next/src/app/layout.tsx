@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { Hanken_Grotesk, Lora, IBM_Plex_Mono } from "next/font/google";
 import "../styles/globals.css";
 import { Providers } from "./providers";
 import { CONSOLE_TITLE, PRODUCT_DESCRIPTION, PRODUCT_NAME } from "@/lib/app-config";
@@ -21,7 +22,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   viewportFit: "cover",
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
+    { media: "(prefers-color-scheme: light)", color: "#F6F5F2" },
     { media: "(prefers-color-scheme: dark)", color: "#09090b" },
   ],
 };
@@ -35,9 +36,15 @@ export const viewport: Viewport = {
 // failing code paths live in the layout's Providers.
 export const dynamic = "force-dynamic";
 
+// The design canvas's type: Hanken Grotesk for text, Lora for display headings,
+// IBM Plex Mono for ids and code. Self-hosted by next/font at build time.
+const hanken = Hanken_Grotesk({ subsets: ["latin"], weight: ["400", "500", "600", "700"], variable: "--font-hanken", display: "swap" });
+const lora = Lora({ subsets: ["latin"], weight: ["500", "600"], style: ["normal", "italic"], variable: "--font-lora", display: "swap" });
+const plexMono = IBM_Plex_Mono({ subsets: ["latin"], weight: ["400", "500"], variable: "--font-plex-mono", display: "swap" });
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning className={`${hanken.variable} ${lora.variable} ${plexMono.variable}`}>
       <body className="min-h-screen bg-background text-foreground antialiased">
         {/*
           esbuild's `keepNames` helper (`__name`) is referenced by the

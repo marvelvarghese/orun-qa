@@ -2,8 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Menu, Sun, Moon, LogOut, User2, ShieldCheck } from "lucide-react";
-import { useTheme } from "next-themes";
+import { Menu, LogOut, User2, ShieldCheck } from "lucide-react";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { NavContent } from "./sidebar";
 import { SidebarOrgSwitcher } from "./sidebar-org-switcher";
@@ -20,7 +19,6 @@ export function MobileNav() {
   const [open, setOpen] = React.useState(false);
   const router = useRouter();
   const { setToken } = useSession();
-  const { theme, setTheme } = useTheme();
   const close = () => setOpen(false);
 
   return (
@@ -59,17 +57,6 @@ export function MobileNav() {
               close();
               router.push("/account/security");
             }}
-          />
-          <FooterButton
-            icon={
-              theme === "dark" ? (
-                <Sun className="h-5 w-5 opacity-80" />
-              ) : (
-                <Moon className="h-5 w-5 opacity-80" />
-              )
-            }
-            label={theme === "dark" ? "Light mode" : "Dark mode"}
-            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
           />
           <FooterButton
             icon={<LogOut className="h-5 w-5 opacity-80" />}

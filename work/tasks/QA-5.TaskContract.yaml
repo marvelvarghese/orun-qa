@@ -1,0 +1,14 @@
+apiVersion: orun.io/v1
+kind: TaskContract
+metadata:
+  name: QA-5
+spec:
+  goal: The console takes the design canvas's look — its type, palette, rail and component styles — the Features home is rebuilt to the canvas element for element, every screen in the design has its route in the rail, and a token-free /demo/qa preview renders the screens with the canvas's sample data for visual checks.
+  affects:
+    - default/orun-qa/web-console-next
+    - default/orun-qa/web-console-next-tests
+  doneWhen:
+    - the console on stage shows the design's rail, fonts and colours
+    - /demo/qa matches the Features artboard's measured type, colours, radii and spacing
+    - the web-console-next and web-console-next-tests lanes are green
+  gates: []

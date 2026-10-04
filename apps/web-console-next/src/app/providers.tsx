@@ -47,8 +47,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
   // One QueryClient for the app lifetime (survives re-renders, not re-created).
   const [queryClient] = React.useState(makeQueryClient);
 
+  // Orun QA follows the design canvas, which is light only.
   return (
-    <NextThemesProvider attribute="class" defaultTheme="dark" enableSystem={false}>
+    <NextThemesProvider attribute="class" defaultTheme="light" forcedTheme="light" enableSystem={false}>
       <QueryClientProvider client={queryClient}>
         <QueryClientCtx.Provider value={queryClient}>
           <SessionProvider>

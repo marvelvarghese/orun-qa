@@ -1,37 +1,42 @@
+@import "./qa.css";
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
   :root {
-    --font-sans: "Inter", system-ui, sans-serif;
-    --font-mono: "JetBrains Mono", ui-monospace, monospace;
+    /* Orun QA — the design canvas's type and palette (Feature hub · PM view). */
+    --font-sans: var(--font-hanken), "Hanken Grotesk", system-ui, sans-serif;
+    --font-display: var(--font-lora), Lora, Georgia, serif;
+    --font-mono: var(--font-plex-mono), "IBM Plex Mono", ui-monospace, monospace;
 
-    /* Light theme — "paper" surface */
-    --background: 0 0% 100%;
-    --foreground: 240 10% 4%;
-    --card: 0 0% 100%;
-    --card-foreground: 240 10% 4%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 240 10% 4%;
-    --primary: 245 80% 60%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 240 5% 96%;
-    --secondary-foreground: 240 6% 10%;
-    --muted: 240 5% 96%;
-    --muted-foreground: 240 4% 46%;
-    --accent: 240 5% 96%;
-    --accent-foreground: 240 6% 10%;
-    --destructive: 0 72% 51%;
-    --destructive-foreground: 0 0% 100%;
-    --warning: 38 92% 50%;
-    --warning-foreground: 26 83% 14%;
-    --success: 142 71% 45%;
-    --success-foreground: 0 0% 100%;
-    --border: 240 6% 90%;
-    --input: 240 6% 90%;
-    --ring: 245 80% 60%;
-    --radius: 0.625rem;
+    /* Light theme — warm paper ground, white cards, ink primary, gold accent */
+    --background: 45.0 18.2% 95.7%; /* #F6F5F2 */
+    --foreground: 0.0 0.0% 9.0%; /* #171717 */
+    --card: 0.0 0.0% 100.0%; /* #FFFFFF */
+    --card-foreground: 0.0 0.0% 9.0%; /* #171717 */
+    --popover: 0.0 0.0% 100.0%; /* #FFFFFF */
+    --popover-foreground: 0.0 0.0% 9.0%; /* #171717 */
+    --primary: 0.0 0.0% 9.0%; /* #171717 */
+    --primary-foreground: 0.0 0.0% 100.0%; /* #FFFFFF */
+    --secondary: 42.9 17.9% 92.4%; /* #EFEDE8 */
+    --secondary-foreground: 42.9 5.0% 27.6%; /* #4A4843 */
+    --muted: 42.9 17.9% 92.4%; /* #EFEDE8 */
+    --muted-foreground: 42.9 3.9% 35.5%; /* #5E5C57 */
+    --accent: 42.9 17.9% 92.4%; /* #EFEDE8 */
+    --accent-foreground: 0.0 0.0% 9.0%; /* #171717 */
+    --destructive: 2.7 55.2% 52.7%; /* #C94A44 */
+    --destructive-foreground: 0.0 0.0% 100.0%; /* #FFFFFF */
+    --warning: 41.0 51.2% 51.8%; /* #C39B45 */
+    --warning-foreground: 44.7 58.4% 30.2%; /* #7A6320 */
+    --success: 146.2 38.0% 36.7%; /* #3A8159 */
+    --success-foreground: 0.0 0.0% 100.0%; /* #FFFFFF */
+    --border: 42.0 16.7% 88.2%; /* #E6E3DC */
+    --input: 42.9 14.6% 81.2%; /* #D6D2C8 */
+    --ring: 0.0 0.0% 9.0%; /* #171717 */
+    --gold: 41.0 51.2% 51.8%; /* #C39B45 */
+    --rail: 48.0 16.1% 93.9%; /* #F2F1ED */
+    --radius: 1rem;
   }
 
   .dark {
