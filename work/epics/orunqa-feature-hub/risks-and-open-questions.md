@@ -41,3 +41,7 @@ Orun QA was first bootstrapped on cirrus (Cloudflare D1). It moved to lumen (Sup
 ## QA-H — A hub connects to one Orunbase workspace (ACCEPTED)
 
 Some companies split a product across workspaces. One connection per hub keeps the catalog, runs and approvals unambiguous for the first release; an organization can hold many hubs.
+
+## QA-K — Independent first, Orunbase later (SETTLED)
+
+Orun QA ships as a standalone product with its own workspaces; its own workspace is the default and tests Orun QA itself. The Orunbase integration (sign-in, catalog seed, deploy trigger, production gate) is QA6. Revisit when QA5 ships.

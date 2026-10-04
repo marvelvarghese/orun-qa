@@ -67,6 +67,7 @@ export const QA_LIMITS = {
   descriptionMax: 2000,
   refsMax: 50,
   refMax: 300,
+  positionMax: 10000,
 } as const;
 
 export interface CreateHubRequest {

@@ -107,7 +107,7 @@ const NOT_FOUND: QaResult<never> = { ok: false, error: { kind: "not_found" } };
 export function createQaRepository(executor: SqlExecutor): QaRepository {
   async function featureInHub(orgId: string, hubId: string, featureId: string): Promise<boolean> {
     const r = await executor.execute(
-      `SELECT id FROM qa.features WHERE org_id = $1 AND hub_id = $2 AND id = $3`,
+      `SELECT id FROM qa.features WHERE org_id = $1 AND hub_id = $2 AND id = $3 AND status = 'active'`,
       [orgId, hubId, featureId],
     );
     return r.rowCount > 0;

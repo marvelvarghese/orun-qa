@@ -13,7 +13,9 @@ import { manifest, BOUNDED_CONTEXTS } from "@saas/db";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS_ROOT = resolve(__dirname, "../../..", "packages/db/src/migrations");
-const QA_SQL = readFileSync(resolve(MIGRATIONS_ROOT, "200_qa_feature_map/up.sql"), "utf8");
+const QA_SQL = ["200_qa_feature_map", "210_qa_feature_name_active"]
+  .map((m) => readFileSync(resolve(MIGRATIONS_ROOT, `${m}/up.sql`), "utf8"))
+  .join("\n");
 
 async function migrated(): Promise<PGlite> {
   const db = new PGlite();
@@ -52,16 +54,18 @@ async function seedFeature(repo: QaRepository, hubId: string, name: string) {
 }
 
 describe("200_qa_feature_map migration", () => {
-  it("registers 'qa' as a bounded context and sits at the manifest tail", () => {
+  it("registers 'qa' as a bounded context and sits at the manifest tail, in order", () => {
     expect(BOUNDED_CONTEXTS).toContain("qa");
     const ids = manifest.migrations.map((m) => m.id);
-    expect(ids[ids.length - 1]).toBe("200_qa_feature_map");
+    expect(ids.slice(-2)).toEqual(["200_qa_feature_map", "210_qa_feature_name_active"]);
   });
 
-  it("has a manifest checksum matching the on-disk up.sql", () => {
-    const entry = manifest.migrations.find((m) => m.id === "200_qa_feature_map")!;
-    const content = readFileSync(resolve(MIGRATIONS_ROOT, entry.path));
-    expect(entry.checksum).toBe(createHash("sha256").update(content).digest("hex"));
+  it("has manifest checksums matching the on-disk up.sql files", () => {
+    for (const id of ["200_qa_feature_map", "210_qa_feature_name_active"]) {
+      const entry = manifest.migrations.find((m) => m.id === id)!;
+      const content = readFileSync(resolve(MIGRATIONS_ROOT, entry.path));
+      expect(entry.checksum).toBe(createHash("sha256").update(content).digest("hex"));
+    }
   });
 
   it("creates the qa schema with its four tables, and re-applies cleanly", async () => {
@@ -121,6 +125,13 @@ describe("qa repository against a real Postgres engine", () => {
     await repo.updateFeature(ORG, hub.id, created.value.id, { status: "archived", updatedAt: later });
     const list = await repo.listFeatures(ORG, hub.id);
     expect(list.ok && list.value).toEqual([]);
+
+    // An archived feature's name may be used again.
+    const reused = await repo.createFeature({
+      id: id(), orgId: ORG, hubId: hub.id, areaId: null, name: "Archive a project", description: "", ownerUserId: null,
+      qaUserId: null, isPublic: false, codeRefs: [], specLinks: [], createdAt: later,
+    });
+    expect(reused.ok).toBe(true);
     await db.close();
   });
 
@@ -154,6 +165,11 @@ describe("qa repository against a real Postgres engine", () => {
     expect(await edge(create.id, archive.id)).toEqual({ ok: false, error: { kind: "conflict", entity: "edge" } });
     expect(await edge(create.id, create.id)).toEqual({ ok: false, error: { kind: "invalid", reason: "self_edge" } });
     expect(await edge(create.id, foreign.id)).toEqual({ ok: false, error: { kind: "invalid", reason: "feature_not_in_hub" } });
+
+    // No new edges to an archived feature.
+    const gone = await seedFeature(repo, hub.id, "Old report");
+    await repo.updateFeature(ORG, hub.id, gone.id, { status: "archived", updatedAt: AT });
+    expect(await edge(create.id, gone.id)).toEqual({ ok: false, error: { kind: "invalid", reason: "feature_not_in_hub" } });
 
     const agent = await edge(archive.id, create.id, "agent");
     if (!agent.ok) throw new Error("agent edge");

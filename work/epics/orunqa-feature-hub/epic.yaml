@@ -19,7 +19,7 @@ spec:
         - "a workspace member opens the hub and sees every feature with its area, health and owner"
         - "the dependency map shows what each feature relies on and what breaks with it"
         - "Orun QA's own hub lists Orun QA's own features, mapped the same way"
-      tasks: [QA-2, QA-3]
+      tasks: [QA-2, QA-3, QA-4]
     - name: "QA2 — scenarios that run and record"
       exitCriteria:
         - "a scenario runs on stage in a real browser and its recording plays on the feature card"
@@ -46,4 +46,10 @@ spec:
         - "the PM asks the agent a question in chat and gets an answer with its sources"
         - "a visitor browses the public feature tour without signing in"
         - "Orun QA's own public tour shows Orun QA, recorded by itself"
+      tasks: []
+    - name: "QA6 — the Orunbase integration"
+      exitCriteria:
+        - "a user signs in with Orunbase and connects an Orunbase workspace to a hub"
+        - "a hub seeds its features from the connected workspace's catalog"
+        - "the connected workspace's production promotion waits on the hub's release review"
       tasks: []

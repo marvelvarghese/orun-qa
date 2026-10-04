@@ -7,7 +7,7 @@ import { z } from "zod";
 import { Plus, LayoutGrid, Film } from "lucide-react";
 import type { FeatureHealth, PublicFeature } from "@saas/contracts/qa";
 import { OrgScope } from "@/components/shell/org-scope";
-import { HubScope } from "@/components/qa/hub-scope";
+import { HubScope, qaHref } from "@/components/qa/hub-scope";
 import { HealthBadge, HealthBar, HEALTH_LABEL, HEALTH_ORDER } from "@/components/qa/health";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -73,7 +73,7 @@ function Inner({ orgId, orgSlug, hubId, hubName }: { orgId: string; orgSlug: str
         </div>
         <div className="flex gap-2">
           <Button variant="outline" asChild>
-            <Link href={`/orgs/${orgSlug}/insights`}>How they connect</Link>
+            <Link href={qaHref(orgSlug, "insights", hubId)}>How they connect</Link>
           </Button>
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
@@ -170,7 +170,7 @@ function Inner({ orgId, orgSlug, hubId, hubName }: { orgId: string; orgSlug: str
             <h2 className="text-lg font-semibold tracking-tight">{g.name}</h2>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {g.items.map((f) => (
-                <Link key={f.id} href={`/orgs/${orgSlug}/features/${f.id}`} className="group block">
+                <Link key={f.id} href={qaHref(orgSlug, `features/${f.id}`, hubId)} className="group block">
                   <Card className="h-full overflow-hidden transition-shadow group-hover:border-primary/40 group-hover:shadow-md">
                     <div className="m-2 flex aspect-[16/10] flex-col items-center justify-center gap-2 rounded-lg bg-muted text-center text-xs text-muted-foreground">
                       <Film className="h-5 w-5" aria-hidden="true" />

@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useSearchParams } from "next/navigation";
 import { z } from "zod";
 import { LayoutGrid } from "lucide-react";
 import type { PublicHub } from "@saas/contracts/qa";
@@ -30,7 +31,7 @@ export function HubScope({ orgId, children }: { orgId: string; children: (hub: P
   const { toast } = useToast();
   const hubs = useApiQuery(qk.qaHubs(orgId), () => wrap(async () => (await client.qa.listHubs(orgId)).hubs));
   const [open, setOpen] = React.useState(false);
-  const wanted = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("hub");
+  const wanted = useSearchParams()?.get("hub") ?? null;
 
   if (hubs.loading) {
     return (
@@ -95,4 +96,10 @@ export function HubScope({ orgId, children }: { orgId: string; children: (hub: P
       </Dialog>
     </>
   );
+}
+
+/** A QA link that keeps the current hub, so an organization with several hubs never lands on the wrong one. */
+export function qaHref(orgSlug: string, path: string, hubId: string, extra?: Record<string, string>): string {
+  const q = new URLSearchParams({ hub: hubId, ...(extra ?? {}) });
+  return `/orgs/${orgSlug}/${path}?${q.toString()}`;
 }
