@@ -3,10 +3,12 @@
 import * as React from "react";
 import Link from "next/link";
 import { CheckCheck, Bug, ClipboardList, FolderKanban, Gauge, LayoutGrid, ListChecks, MessageSquare, Network, Play, Settings, UserRound } from "lucide-react";
-import type { PublicArea, PublicFeature, FeatureHealth } from "@saas/contracts/qa";
+import type { PublicArea, PublicFeature, FeatureHealth, PublicResult, PublicScenario } from "@saas/contracts/qa";
+import { DEMO_RECORDING, DEMO_RECORDING_MESSAGE, DEMO_RECORDING_TIMINGS } from "./recording.fixture";
 import { useSearchParams } from "next/navigation";
 import { FeaturesView } from "@/components/qa/features-view";
 import { FeatureView } from "@/components/qa/feature-view";
+import { TestsView } from "@/components/qa/tests-view";
 
 /**
  * /demo/qa — a token-free preview of the Orun QA screens with the design
@@ -94,7 +96,55 @@ function Rail() {
   );
 }
 
+const AT = "2026-10-05T10:41:00.000Z";
+const demoResult = (id: string, scenarioId: string, verdict: PublicResult["verdict"], extra: Partial<PublicResult> = {}): PublicResult => ({
+  id,
+  runId: "run_demo",
+  scenarioId,
+  featureId: FEATURES[4]!.id,
+  verdict,
+  failingStep: null,
+  message: "",
+  durationMs: 4200,
+  stepTimings: [],
+  apiCalls: [],
+  recordingId: null,
+  createdAt: AT,
+  ...extra,
+});
+const RECORDED = demoResult("res_1", "scn_1", "fails", { failingStep: 2, message: DEMO_RECORDING_MESSAGE, stepTimings: DEMO_RECORDING_TIMINGS, recordingId: "rec_demo", durationMs: 15200 });
+const demoScenario = (id: string, name: string, expected: string, last: PublicResult | null, state: PublicScenario["state"] = "approved"): PublicScenario => ({
+  id,
+  hubId: "hub_demo",
+  featureId: FEATURES[4]!.id,
+  name,
+  expected,
+  kind: "screens_apis",
+  cadence: "daily",
+  state,
+  asRole: null,
+  steps:
+    id === "scn_1"
+      ? [
+          { ord: 0, text: "Open the sign-in page", action: { type: "goto", path: "/login" } },
+          { ord: 1, text: "It asks you to sign in", action: { type: "expect_text", text: "Sign in" } },
+          { ord: 2, text: "Your company login is offered", action: { type: "expect_text", text: "Continue with your company account" } },
+        ]
+      : [],
+  last,
+  createdAt: AT,
+  updatedAt: AT,
+});
+const SCENARIOS: PublicScenario[] = [
+  demoScenario("scn_1", "Sign in offers the company login", "The sign-in page offers the company account first", RECORDED),
+  demoScenario("scn_2", "Archive an empty project", "It disappears from the list and shows under Archived", demoResult("res_2", "scn_2", "works")),
+  demoScenario("scn_3", "Bring an archived project back", "Everything returns exactly as it was", demoResult("res_3", "scn_3", "works")),
+  demoScenario("scn_4", "A member who is not an owner cannot archive", "They do not see the option at all", null, "draft"),
+];
+const HISTORY: PublicResult[] = [RECORDED, ...Array.from({ length: 13 }, (_, i) => demoResult(`res_h${i}`, "scn_1", "works", { createdAt: new Date(Date.parse(AT) - (i + 1) * 86400000).toISOString() }))];
+
 export default function QaDemoPage() {
+  const [picked, setPicked] = React.useState("scn_1");
   const view = useSearchParams()?.get("view");
   // Sample data only: never shown in a deployed console unless explicitly enabled.
   if (process.env.NODE_ENV === "production" && process.env.NEXT_PUBLIC_QA_DEMO !== "1") {
@@ -104,7 +154,28 @@ export default function QaDemoPage() {
     <div className="flex min-h-screen bg-background">
       <Rail />
       <main className="mx-auto w-full max-w-[1320px] flex-1 px-8 pb-16 pt-8">
-        {view === "feature" ? (
+        {view === "tests" ? (
+          <TestsView
+            scenarios={SCENARIOS.map((s) =>
+              s.id === "scn_2"
+                ? {
+                    ...s,
+                    steps: [
+                      { ord: 0, text: "Open an empty project", action: { type: "goto", path: "/projects/empty" } },
+                      { ord: 1, text: "Choose Archive and confirm", action: { type: "click", text: "Archive" } },
+                      { ord: 2, text: "Archive the project", action: { type: "expect_response", method: "POST", path: "/projects/{id}/archive", status: 202 } },
+                    ],
+                    last: s.last && { ...s.last, apiCalls: [{ method: "POST", path: "/projects/p1/archive", status: 202, ms: 160 }] },
+                  }
+                : s,
+            )}
+            features={FEATURES}
+            lastRun={{ id: "run_demo", hubId: "hub_demo", trigger: "schedule", env: "stage", ref: null, status: "failed", startedAt: AT, finishedAt: AT }}
+            recordingHref={() => "/demo/qa?view=feature"}
+            tryHref="#"
+            agentHref="#"
+          />
+        ) : view === "feature" ? (
           <FeatureView
             feature={{ ...FEATURES[4]!, specLinks: ["LIN-498"], ownerUserId: "Rahul", qaUserId: "Priya" }}
             ripple={{ feature: FEATURES[4]!.id, reliesOn: [FEATURES[3]!.id], breaksDirectly: [FEATURES[5]!.id, FEATURES[10]!.id], breaksNext: [FEATURES[11]!.id] }}
@@ -113,6 +184,12 @@ export default function QaDemoPage() {
             featuresHref="#"
             featureHref={() => "#"}
             insightsHref="#"
+            scenarios={SCENARIOS}
+            selectedScenarioId={picked}
+            onSelectScenario={setPicked}
+            history={picked === "scn_1" ? HISTORY : []}
+            loadRecording={async () => DEMO_RECORDING}
+            onApprove={async () => undefined}
           />
         ) : (
         <FeaturesView

@@ -1,0 +1,15 @@
+apiVersion: orun.io/v1
+kind: TaskContract
+metadata:
+  name: QA-12
+spec:
+  goal: A PM watches a scenario's rrweb recording on the feature page — with the step being shown, the failing step marked, and chapters to jump between steps — approves draft scenarios there, and sees every scenario of the hub on All tests, each expanding to the steps a customer takes and the API calls checked behind them.
+  affects:
+    - default/orun-qa/web-console-next
+    - default/orun-qa/web-console-next-tests
+  doneWhen:
+    - the feature page plays the newest recording of the selected scenario, and the last verified one, inside the design's frame
+    - step-by-step chapters jump the player to their step; a failed step is marked on the timeline and explained in plain words
+    - a PM approves a draft scenario from the feature page, pinned to the version on screen
+    - All tests lists every scenario with its newest result and expands to its steps and API checks
+  gates: []

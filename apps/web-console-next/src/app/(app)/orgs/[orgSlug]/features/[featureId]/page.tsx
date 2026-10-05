@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { OrgScope } from "@/components/shell/org-scope";
 import { HubScope, qaHref } from "@/components/qa/hub-scope";
@@ -11,6 +11,7 @@ import { useToast } from "@/components/ui/toast";
 import { useSession } from "@/lib/session";
 import { useApiQuery, qk } from "@/lib/query";
 import { wrap } from "@/lib/api";
+import type { PublicScenario } from "@saas/contracts/qa";
 
 export default function FeaturePage() {
   const params = useParams<{ orgSlug: string; featureId: string }>();
@@ -33,6 +34,24 @@ function Inner({ orgId, orgSlug, hubId, featureId }: { orgId: string; orgSlug: s
   const qc = useQueryClient();
   const detail = useApiQuery(qk.qaFeature(orgId, hubId, featureId), () => wrap(() => client.qa.getFeature(orgId, hubId, featureId)));
   const map = useApiQuery(qk.qaMap(orgId, hubId), () => wrap(() => client.qa.getMap(orgId, hubId)));
+  const scenarios = useApiQuery(qk.qaScenarios(orgId, hubId, featureId), () => wrap(async () => (await client.qa.listScenarios(orgId, hubId, { feature: featureId })).scenarios));
+  // "Watch the recording" from All tests names the scenario to open.
+  const [picked, setPicked] = React.useState<string | null>(useSearchParams()?.get("scenario") ?? null);
+  // Show the scenario that needs attention first: a failing one, else the first recorded one.
+  const list = scenarios.data ?? [];
+  // A ?scenario= from elsewhere counts only if it is one of this feature's.
+  const pickedOk = picked && list.some((s) => s.id === picked) ? picked : null;
+  const fallback = list.find((s) => s.state === "approved" && s.last && s.last.verdict !== "works")?.id ?? list.find((s) => s.last?.recordingId)?.id ?? list[0]?.id ?? null;
+  // Settle the default once, so a background refresh never switches the scenario under the viewer.
+  React.useEffect(() => {
+    if (!pickedOk && fallback) setPicked(fallback);
+  }, [pickedOk, fallback]);
+  const selectedId = pickedOk ?? fallback;
+  const scenario = useApiQuery(
+    qk.qaScenario(orgId, hubId, selectedId ?? "none"),
+    () => wrap(() => client.qa.getScenario(orgId, hubId, selectedId!)),
+    { enabled: selectedId !== null },
+  );
 
   if (detail.loading) {
     return (
@@ -71,6 +90,25 @@ function Inner({ orgId, orgSlug, hubId, featureId }: { orgId: string; orgSlug: s
     return true;
   };
 
+  const loadRecording = async (recordingId: string) => (await client.qa.getRecording(orgId, hubId, recordingId)).recording.events;
+
+  const onApprove = async (sc: PublicScenario) => {
+    const r = await wrap(async () => (await client.qa.approveScenario(orgId, hubId, sc.id, { updatedAt: sc.updatedAt })).scenario);
+    if (!r.ok) {
+      toast({
+        kind: "error",
+        title: "Not approved",
+        description:
+          r.error.code === "not_found" ? "Only the product owner can approve a scenario." : r.error.code === "conflict" ? "It changed since you opened it. Look again, then approve." : r.error.message,
+      });
+      scenarios.reload();
+      return;
+    }
+    toast({ kind: "success", title: "Approved", description: "It now counts toward this feature's health." });
+    void qc.invalidateQueries({ queryKey: ["qa", "scenarios", orgId, hubId] });
+    void qc.invalidateQueries({ queryKey: qk.qaScenario(orgId, hubId, sc.id) });
+  };
+
   return (
     <FeatureView
       feature={feature}
@@ -81,6 +119,12 @@ function Inner({ orgId, orgSlug, hubId, featureId }: { orgId: string; orgSlug: s
       featureHref={(id) => qaHref(orgSlug, `features/${id}`, hubId)}
       insightsHref={qaHref(orgSlug, "insights", hubId, { feature: feature.id })}
       onSave={onSave}
+      scenarios={scenarios.loading ? null : list}
+      selectedScenarioId={selectedId}
+      onSelectScenario={setPicked}
+      history={scenario.data?.scenario.id === selectedId ? scenario.data.history : []}
+      loadRecording={loadRecording}
+      onApprove={onApprove}
     />
   );
 }
