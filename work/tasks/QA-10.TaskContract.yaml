@@ -1,0 +1,14 @@
+apiVersion: orun.io/v1
+kind: TaskContract
+metadata:
+  name: QA-10
+spec:
+  goal: A headless runner in GitHub Actions signs in to stage after every main deploy, every night and on demand, keeps Orun QA's own hub and declared scenarios current, runs every approved scenario in Chromium with rrweb recording the DOM, and posts each result, its API calls and its recording to the run.
+  affects:
+    - default/orun-qa/qa-runner
+    - .github/workflows/qa-run.yml
+  doneWhen:
+    - after a main deploy the Orun QA run workflow runs and the run appears in the self hub with a result per approved scenario
+    - a scenario with screens carries a gzip+base64 rrweb recording, and its step timings and API calls are stored
+    - a failing scenario fails the workflow and names the step that failed
+  gates: []
