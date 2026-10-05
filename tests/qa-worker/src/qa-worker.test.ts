@@ -27,11 +27,20 @@ const OTHER_ORG = "org_99999999999999999999999999999999";
 async function pgRepos(): Promise<{ repo: QaRepository; runs: QaRunsRepository }> {
   const db = new PGlite();
   await db.exec(QA_SQL);
-  const executor = {
+  // Bind like production: postgres.js with fetch_types off cannot serialize a JS
+  // array parameter, so a query that passes one would fail there. PGlite would
+  // accept it, so refuse it here. rowCount is the returned rows, as in production.
+  type Q = Pick<PGlite, "query">;
+  const executorOn = (q: Q) => ({
     async execute(text: string, params?: unknown[]) {
-      const r = await db.query<Record<string, unknown>>(text, (params ?? []) as never[]);
+      if ((params ?? []).some((p) => Array.isArray(p))) throw new Error(`array parameter in: ${text.slice(0, 60)}`);
+      const r = await q.query<Record<string, unknown>>(text, (params ?? []) as never[]);
       return { rows: r.rows as never[], rowCount: r.rows.length };
     },
+  });
+  const executor = {
+    ...executorOn(db),
+    transaction: <T>(fn: (ex: ReturnType<typeof executorOn>) => Promise<T>): Promise<T> => db.transaction((t) => fn(executorOn(t))),
   };
   return { repo: createQaRepository(executor as never), runs: createQaRunsRepository(executor as never) };
 }
@@ -364,7 +373,7 @@ describe("qa-worker", () => {
     const s = await t.call("POST", base, { featureId, name, steps: goodSteps });
     expect(s.status).toBe(201);
     const id = s.data!.scenario.id as string;
-    expect((await t.call("POST", `${base}/${id}/approve`)).status).toBe(200);
+    expect((await t.call("POST", `${base}/${id}/approve`, { updatedAt: s.data!.scenario.updatedAt })).status).toBe(200);
     return id;
   }
 
@@ -379,22 +388,38 @@ describe("qa-worker", () => {
     expect(s.data!.scenario.state).toBe("draft");
     expect(s.data!.scenario.steps.map((x: any) => x.ord)).toEqual([0, 1]);
     const id = s.data!.scenario.id;
-    expect((await t.call("POST", `${base}/${id}/approve`)).status).toBe(404);
+    const seen = { updatedAt: s.data!.scenario.updatedAt };
+    expect((await t.call("POST", `${base}/${id}/approve`, seen)).status).toBe(404);
     t.state.role = "viewer";
     expect((await t.call("POST", base, { featureId: ids.Map, name: "Other", steps: goodSteps })).status).toBe(404);
     const listed = await t.call("GET", `${base}?feature=${ids.Map}`);
     expect(listed.data!.scenarios).toHaveLength(1);
     t.state.role = "owner";
-    const ok = await t.call("POST", `${base}/${id}/approve`);
+    expect((await t.call("POST", `${base}/${id}/approve`, {})).status).toBe(422);
+    // A builder edits the draft after the PM opened it: the PM's approval is refused.
+    t.state.role = "builder";
+    const changed = await t.call("PATCH", `${base}/${id}`, { expected: "The map draws every feature" });
+    t.state.role = "owner";
+    expect((await t.call("POST", `${base}/${id}/approve`, seen)).status).toBe(409);
+    const ok = await t.call("POST", `${base}/${id}/approve`, { updatedAt: changed.data!.scenario.updatedAt });
     expect(ok.data!.scenario.state).toBe("approved");
-    // Changing its steps sends it back for approval.
+    // Approving it again, unchanged, is a no-op.
+    expect((await t.call("POST", `${base}/${id}/approve`, { updatedAt: ok.data!.scenario.updatedAt })).status).toBe(200);
+    // A builder cannot take it out of the gate by state, but may change its steps,
+    // which sends it back for approval.
+    t.state.role = "builder";
+    expect((await t.call("PATCH", `${base}/${id}`, { state: "draft" })).status).toBe(404);
+    expect((await t.call("PATCH", `${base}/${id}`, { state: "archived" })).status).toBe(404);
     const edited = await t.call("PATCH", `${base}/${id}`, { steps: [goodSteps[0]] });
     expect(edited.data!.scenario.state).toBe("draft");
     expect(edited.data!.scenario.steps).toHaveLength(1);
+    t.state.role = "owner";
     // A rename alone does not.
-    await t.call("POST", `${base}/${id}/approve`);
+    await t.call("POST", `${base}/${id}/approve`, { updatedAt: edited.data!.scenario.updatedAt });
     const renamed = await t.call("PATCH", `${base}/${id}`, { name: "Opens the feature map" });
     expect(renamed.data!.scenario.state).toBe("approved");
+    expect((await t.call("PATCH", `${base}/${id}`, { state: "archived" })).data!.scenario.state).toBe("archived");
+    expect((await t.call("PATCH", `${base}/${id}`, { name: "Again" })).status).toBe(409);
   });
 
   it("validates scenario steps and refuses a feature from elsewhere", async () => {
@@ -447,11 +472,14 @@ describe("qa-worker", () => {
       recording: { encoding: "rrweb+gzip+base64", events },
     });
     expect(works.status).toBe(201);
-    expect(works.data!.recordingStored).toBe(true);
     expect(works.data!.result.recordingId).toMatch(/^rec_/);
     const fails = await t.call("POST", `${hub}/runs/${runId}/results`, { scenarioId: importScn, verdict: "fails", failingStep: 1, message: "No text", durationMs: 900 });
     expect(fails.status).toBe(201);
-    expect(fails.data!.recordingStored).toBeNull();
+    expect(fails.data!.result.recordingId).toBeNull();
+    // A failing step must exist in the scenario, and only a failure names one.
+    expect((await t.call("POST", `${hub}/runs/${runId}/results`, { scenarioId: importScn, verdict: "fails", failingStep: 2, durationMs: 1 })).status).toBe(422);
+    expect((await t.call("POST", `${hub}/runs/${runId}/results`, { scenarioId: importScn, verdict: "works", failingStep: 0, durationMs: 1 })).status).toBe(422);
+    expect((await t.call("POST", `${hub}/runs/${runId}/results`, { scenarioId: importScn, verdict: "works", durationMs: 1, stepTimings: [{ ord: 0, startMs: 9, endMs: 3, ok: true }] })).status).toBe(422);
     expect((await t.call("POST", `${hub}/runs/${runId}/results`, { scenarioId: mapScn, verdict: "works", durationMs: 1 })).status).toBe(409);
     expect((await t.call("POST", `${hub}/runs/${runId}/results`, { scenarioId: draft.data!.scenario.id, verdict: "works", durationMs: 1 })).status).toBe(201);
     expect((await t.call("POST", `${hub}/runs/${runId}/results`, { scenarioId: mapScn, verdict: "works", durationMs: 1, recording: { encoding: "rrweb+gzip+base64", events: "not base64!" } })).status).toBe(422);
@@ -496,6 +524,38 @@ describe("qa-worker", () => {
     expect((await t.call("PATCH", `${hub}/scenarios/${mapScn}`, { state: "quarantined" })).data!.scenario.state).toBe("quarantined");
     map = await t.call("GET", `${hub}/map`);
     expect(Object.fromEntries(map.data!.features.map((f: any) => [f.name, f.health]))).toEqual({ Map: "not_tested", Import: "verified" });
+  });
+
+  it("counts only results since the current approval, and never a try run", async () => {
+    const t = await harness();
+    const { hubId, ids } = await hubWithFeatures(t, ["Map"]);
+    const hub = `/v1/organizations/${ORG}/qa/hubs/${hubId}`;
+    const scn = await approvedScenario(t, hubId, ids.Map!);
+    const post = async (trigger: string, verdict: string) => {
+      const run = await t.call("POST", `${hub}/runs`, { trigger });
+      expect((await t.call("POST", `${hub}/runs/${run.data!.run.id}/results`, { scenarioId: scn, verdict, durationMs: 1 })).status).toBe(201);
+      return t.call("POST", `${hub}/runs/${run.data!.run.id}/finish`, {});
+    };
+    const health = async () => (await t.call("GET", `${hub}/map`)).data!.features[0].health;
+
+    expect((await post("schedule", "works")).data!.run.status).toBe("passed");
+    expect(await health()).toBe("verified");
+    // A developer trying a change that fails does not mark the feature broken.
+    await post("try", "fails");
+    expect(await health()).toBe("verified");
+
+    // New steps: back to draft, and the old pass no longer speaks for it once re-approved.
+    const edited = await t.call("PATCH", `${hub}/scenarios/${scn}`, { steps: [goodSteps[0]] });
+    expect(await health()).toBe("not_tested");
+    await t.call("POST", `${hub}/scenarios/${scn}/approve`, { updatedAt: edited.data!.scenario.updatedAt });
+    expect(await health()).toBe("not_tested");
+    expect((await post("deploy", "errored")).data!.run.status).toBe("errored");
+    expect(await health()).toBe("attention");
+
+    // A run finished as errored by the runner stays errored; a finished run takes no results.
+    const run = await t.call("POST", `${hub}/runs`, { trigger: "manual" });
+    expect((await t.call("POST", `${hub}/runs/${run.data!.run.id}/finish`, { errored: true })).data!.run.status).toBe("errored");
+    expect((await t.call("POST", `${hub}/runs/${run.data!.run.id}/results`, { scenarioId: scn, verdict: "works", durationMs: 1 })).status).toBe(409);
   });
 
   it("keeps runs to members who may run them", async () => {

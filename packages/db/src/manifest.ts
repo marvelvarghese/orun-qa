@@ -206,7 +206,7 @@ export const manifest: MigrationManifest = {
       context: "qa",
       path: "220_qa_scenarios_runs/up.sql",
       checksum:
-        "c84c6377a133ea15575a009261759407c7d8d514640e99cece8d9e22f7cfffe7",
+        "3fda978d6f27a051f7882d1e0460946c644f1e272c5c9d3fd15459fa41e58d66",
       description:
         "Orun QA scenarios and runs (QA2) — scenarios with steps, runs, results and rrweb recordings",
     },

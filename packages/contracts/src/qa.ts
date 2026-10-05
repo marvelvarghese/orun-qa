@@ -221,7 +221,15 @@ export interface CreateScenarioRequest {
   steps: { text: string; action: StepAction }[];
 }
 
-/** Approving is its own route (POST …/scenarios/{id}/approve), the PM's call. */
+/**
+ * Approving is its own route (POST …/scenarios/{id}/approve), the PM's call. The
+ * body pins the version reviewed; a scenario changed since then is a 409.
+ */
+export interface ApproveScenarioRequest {
+  updatedAt: string;
+}
+
+/** Changing an approved scenario's steps, expectation or role sends it back to draft. */
 export type UpdateScenarioRequest = Partial<Omit<CreateScenarioRequest, "featureId" | "kind">> & { state?: "draft" | "quarantined" | "archived" };
 
 export type RunTrigger = "schedule" | "deploy" | "manual" | "try";

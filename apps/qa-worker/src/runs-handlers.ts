@@ -1,4 +1,4 @@
-import type { QaRunsRepository, Run, RunResult, Scenario, ScenarioState, Step } from "@saas/db/qa";
+import type { QaRunsRepository, Run, RunResult, Scenario, Step } from "@saas/db/qa";
 import {
   QA_LIMITS,
   RUN_LIMITS,
@@ -10,7 +10,6 @@ import {
   type PublicScenario,
   type StepAction,
   type StepTiming,
-  type Verdict,
 } from "@saas/contracts/qa";
 import { errorResponse, successResponse, validationError } from "./http.js";
 import { fromPublic, toPublic } from "./ids.js";
@@ -193,9 +192,9 @@ export function getScenario(ctx: Ctx, hubId: string, scenarioId: string): Promis
   return withRepo(ctx, "qa.feature.read", async (_repo, runs) => {
     const r = await runs.getScenario(ctx.orgId, hubId, scenarioId);
     if (!r.ok) return fromRepoError(r.error, ctx.requestId);
-    const recent = await runs.featureResults(ctx.orgId, r.value.featureId, 50);
-    const history = recent.ok ? recent.value.filter((x) => x.scenarioId === scenarioId) : [];
-    return successResponse({ scenario: publicScenario(r.value, history[0]), history: history.slice(0, 20).map(publicResult) }, ctx.requestId);
+    const recent = await runs.scenarioResults(ctx.orgId, scenarioId, 20);
+    const history = recent.ok ? recent.value : [];
+    return successResponse({ scenario: publicScenario(r.value, history[0]), history: history.map(publicResult) }, ctx.requestId);
   });
 }
 
@@ -224,7 +223,6 @@ export async function createScenario(ctx: Ctx, hubId: string, request: Request):
       expected: expected ?? "",
       kind: kind ?? "screens_apis",
       cadence: cadence ?? "daily",
-      state: "draft",
       asRole: asRole ?? null,
       // eslint-disable-next-line no-restricted-syntax -- qa created_by is TEXT holding the public actor id, like qa.feature_edges.confirmed_by
       createdBy: ctx.actor.subjectId,
@@ -253,44 +251,49 @@ export async function updateScenario(ctx: Ctx, hubId: string, scenarioId: string
   return withRepo(ctx, "qa.scenario.write", async (_repo, runs) => {
     const cur = await runs.getScenario(ctx.orgId, hubId, scenarioId);
     if (!cur.ok) return fromRepoError(cur.error, ctx.requestId);
-    if (cur.value.state === "archived") return errorResponse("conflict", "An archived scenario cannot be changed", 409, ctx.requestId);
-    const isPm = await allowed(ctx, "qa.feature.write");
-    // Taking an approved scenario out of the gate (quarantine, archive) is the PM's call.
-    if (!isPm && cur.value.state === "approved" && (state === "quarantined" || state === "archived")) return notFound(ctx.requestId);
-    if (!isPm && state === "quarantined") return notFound(ctx.requestId);
+    // Moving a scenario between states is the PM's call when it takes one out of
+    // the gate; anyone who writes scenarios may only archive or redraft one that
+    // is not approved. Quarantine is always the PM's.
+    const isPm = state === undefined ? false : await allowed(ctx, "qa.feature.write");
+    if (state === "quarantined" && !isPm) return notFound(ctx.requestId);
     // Changing what an approved scenario does sends it back for approval.
     const changesBehaviour = steps !== undefined || (expected !== undefined && expected !== cur.value.expected) || (asRole !== undefined && asRole !== cur.value.asRole);
-    let nextState: ScenarioState | undefined = state;
-    if (nextState === undefined && changesBehaviour && cur.value.state === "approved") nextState = "draft";
     const r = await runs.updateScenario(ctx.orgId, hubId, scenarioId, {
       name,
       expected,
       cadence,
-      state: nextState,
+      state,
       asRole,
-      steps,
-      stepIds: steps ? stepIds(ctx, steps) : undefined,
+      steps: steps ? { steps, stepIds: stepIds(ctx, steps) } : undefined,
+      demoteIfApproved: changesBehaviour,
+      refuseIfApproved: state !== undefined && !isPm,
       updatedAt: now(ctx),
     });
-    if (!r.ok) return fromRepoError(r.error, ctx.requestId);
-    const last = await latestByScenario(runs, ctx.orgId, hubId);
-    return successResponse({ scenario: publicScenario(r.value, last.get(r.value.id)) }, ctx.requestId);
+    if (!r.ok) {
+      if (r.error.kind === "conflict") return errorResponse("conflict", "An archived scenario cannot be changed", 409, ctx.requestId);
+      return fromRepoError(r.error, ctx.requestId);
+    }
+    const last = await runs.scenarioResults(ctx.orgId, scenarioId, 1);
+    return successResponse({ scenario: publicScenario(r.value, last.ok ? last.value[0] : undefined) }, ctx.requestId);
   });
 }
 
-export function approveScenario(ctx: Ctx, hubId: string, scenarioId: string): Promise<Response> {
+/**
+ * The PM approves exactly the version they reviewed: the body carries the
+ * scenario's `updatedAt` as they saw it, and any change since is a conflict.
+ */
+export async function approveScenario(ctx: Ctx, hubId: string, scenarioId: string, request: Request): Promise<Response> {
+  const body = await readJson(request);
+  const seen = body && typeof body.updatedAt === "string" ? new Date(body.updatedAt) : null;
+  if (!seen || Number.isNaN(seen.getTime())) return validationError(ctx.requestId, { updatedAt: ["The scenario's updatedAt as you reviewed it"] });
   return withRepo(ctx, "qa.feature.write", async (_repo, runs) => {
-    const cur = await runs.getScenario(ctx.orgId, hubId, scenarioId);
-    if (!cur.ok) return fromRepoError(cur.error, ctx.requestId);
-    if (cur.value.state === "archived") return errorResponse("conflict", "An archived scenario cannot be approved", 409, ctx.requestId);
-    if (cur.value.state === "approved") {
-      const last = await latestByScenario(runs, ctx.orgId, hubId);
-      return successResponse({ scenario: publicScenario(cur.value, last.get(scenarioId)) }, ctx.requestId);
+    const r = await runs.approveScenario(ctx.orgId, hubId, scenarioId, seen, ctx.actor.subjectId, now(ctx));
+    if (!r.ok) {
+      if (r.error.kind === "conflict") return errorResponse("conflict", "The scenario changed since you reviewed it, or is archived", 409, ctx.requestId);
+      return fromRepoError(r.error, ctx.requestId);
     }
-    const r = await runs.updateScenario(ctx.orgId, hubId, scenarioId, { state: "approved", updatedAt: now(ctx) });
-    if (!r.ok) return fromRepoError(r.error, ctx.requestId);
-    const last = await latestByScenario(runs, ctx.orgId, hubId);
-    return successResponse({ scenario: publicScenario(r.value, last.get(scenarioId)) }, ctx.requestId);
+    const last = await runs.scenarioResults(ctx.orgId, scenarioId, 1);
+    return successResponse({ scenario: publicScenario(r.value, last.ok ? last.value[0] : undefined) }, ctx.requestId);
   });
 }
 
@@ -346,13 +349,6 @@ export async function createRun(ctx: Ctx, hubId: string, request: Request): Prom
   });
 }
 
-/** A finished run's status from its results, unless the runner says it errored. */
-export function runStatusFrom(verdicts: readonly Verdict[]): "passed" | "failed" | "errored" {
-  if (verdicts.includes("fails")) return "failed";
-  if (verdicts.includes("errored")) return "errored";
-  return "passed";
-}
-
 export async function finishRun(ctx: Ctx, hubId: string, runId: string, request: Request): Promise<Response> {
   const body = (await readJson(request)) ?? {};
   const fields: Fields = {};
@@ -361,17 +357,13 @@ export async function finishRun(ctx: Ctx, hubId: string, runId: string, request:
   if (Object.keys(fields).length > 0) return validationError(ctx.requestId, fields);
 
   return withRepo(ctx, "qa.run.write", async (_repo, runs) => {
-    const run = await runs.getRun(ctx.orgId, hubId, runId);
-    if (!run.ok) return fromRepoError(run.error, ctx.requestId);
-    const results = await runs.listResults(ctx.orgId, runId);
-    if (!results.ok) return fromRepoError(results.error, ctx.requestId);
-    const status = errored ? "errored" : runStatusFrom(results.value.map((r) => r.verdict));
-    const r = await runs.finishRun(ctx.orgId, hubId, runId, status, now(ctx));
+    const r = await runs.finishRun(ctx.orgId, hubId, runId, errored as boolean, now(ctx));
     if (!r.ok) {
       if (r.error.kind === "conflict") return errorResponse("conflict", "That run has already finished", 409, ctx.requestId);
       return fromRepoError(r.error, ctx.requestId);
     }
-    return successResponse({ run: publicRun(r.value), results: results.value.map(publicResult) }, ctx.requestId);
+    const results = await runs.listResults(ctx.orgId, runId);
+    return successResponse({ run: publicRun(r.value), results: results.ok ? results.value.map(publicResult) : [] }, ctx.requestId);
   });
 }
 
@@ -383,9 +375,12 @@ function parseTimings(fields: Fields, v: unknown): StepTiming[] | undefined {
     fields.stepTimings = [`A list of at most ${RUN_LIMITS.stepsMax} entries`];
     return undefined;
   }
-  const ok = v.every((t: unknown) => isObj(t) && int(t.ord, 0, RUN_LIMITS.stepsMax) && int(t.startMs, 0, RUN_LIMITS.durationMax) && int(t.endMs, 0, RUN_LIMITS.durationMax) && typeof t.ok === "boolean");
+  const ok = v.every(
+    (t: unknown) =>
+      isObj(t) && int(t.ord, 0, RUN_LIMITS.stepsMax - 1) && int(t.startMs, 0, RUN_LIMITS.durationMax) && int(t.endMs, 0, RUN_LIMITS.durationMax) && (t.endMs as number) >= (t.startMs as number) && typeof t.ok === "boolean",
+  );
   if (!ok) {
-    fields.stepTimings = ["Each entry is {ord, startMs, endMs, ok}"];
+    fields.stepTimings = ["Each entry is {ord, startMs, endMs, ok} with endMs ≥ startMs"];
     return undefined;
   }
   return (v as Record<string, unknown>[]).map((t) => ({ ord: t.ord as number, startMs: t.startMs as number, endMs: t.endMs as number, ok: t.ok as boolean }));
@@ -414,7 +409,8 @@ export async function postResult(ctx: Ctx, hubId: string, runId: string, request
   const verdict = enumField(fields, body, "verdict", ["works", "fails", "skipped", "errored"] as const);
   if (body.verdict === undefined) fields.verdict = ["Required"];
   const failingStep = body.failingStep === undefined || body.failingStep === null ? null : body.failingStep;
-  if (failingStep !== null && !int(failingStep, 0, RUN_LIMITS.stepsMax)) fields.failingStep = ["A step number, or null"];
+  if (failingStep !== null && !int(failingStep, 0, RUN_LIMITS.stepsMax - 1)) fields.failingStep = ["A step number, or null"];
+  if (failingStep !== null && verdict !== undefined && verdict !== "fails" && verdict !== "errored") fields.failingStep = ["Only a failed or errored result names a failing step"];
   const message = str(fields, body, "message", { max: RUN_LIMITS.messageMax });
   if (!int(body.durationMs, 0, RUN_LIMITS.durationMax)) fields.durationMs = [`A whole number of milliseconds up to ${RUN_LIMITS.durationMax}`];
   const stepTimings = parseTimings(fields, body.stepTimings);
@@ -426,7 +422,7 @@ export async function postResult(ctx: Ctx, hubId: string, runId: string, request
       fields.recording = ["{encoding: \"rrweb+gzip+base64\", events}"];
     } else if (rec.events.length === 0 || rec.events.length > RUN_LIMITS.recordingMax) {
       fields.recording = [`events: 1 to ${RUN_LIMITS.recordingMax} base64 characters`];
-    } else if (!BASE64_RE.test(rec.events)) {
+    } else if (rec.events.length % 4 !== 0 || !BASE64_RE.test(rec.events)) {
       fields.recording = ["events must be base64"];
     } else {
       recording = rec.events;
@@ -435,17 +431,19 @@ export async function postResult(ctx: Ctx, hubId: string, runId: string, request
   if (Object.keys(fields).length > 0) return validationError(ctx.requestId, fields);
 
   return withRepo(ctx, "qa.run.write", async (_repo, runs) => {
-    const [run, scenario] = await Promise.all([runs.getRun(ctx.orgId, hubId, runId), runs.getScenario(ctx.orgId, hubId, scenarioId!)]);
-    if (!run.ok) return fromRepoError(run.error, ctx.requestId);
+    const scenario = await runs.getScenario(ctx.orgId, hubId, scenarioId!);
     if (!scenario.ok) {
       if (scenario.error.kind === "not_found") return validationError(ctx.requestId, { scenarioId: ["No such scenario in this hub"] });
       return fromRepoError(scenario.error, ctx.requestId);
     }
-    if (run.value.status !== "running") return errorResponse("conflict", "That run has already finished", 409, ctx.requestId);
+    const stepCount = scenario.value.steps.length;
+    const badStep = (failingStep !== null && (failingStep as number) >= stepCount) || stepTimings!.some((t) => t.ord >= stepCount);
+    if (badStep) return validationError(ctx.requestId, { failingStep: [`This scenario has ${stepCount} steps (0 to ${stepCount - 1})`] });
     const at = now(ctx);
     const r = await runs.addResult({
       id: nextId(ctx),
       orgId: ctx.orgId,
+      hubId,
       runId,
       scenarioId: scenarioId!,
       featureId: scenario.value.featureId,
@@ -455,22 +453,19 @@ export async function postResult(ctx: Ctx, hubId: string, runId: string, request
       durationMs: body.durationMs as number,
       stepTimings: stepTimings!,
       apiCalls: apiCalls!,
+      recording: recording === undefined ? null : { id: nextId(ctx), events: recording, sizeBytes: base64Bytes(recording) },
       createdAt: at,
     });
-    if (!r.ok) return fromRepoError(r.error, ctx.requestId);
-    let result = r.value;
-    let recordingStored = recording === undefined ? null : false;
-    if (recording !== undefined) {
-      // A result without its recording is still a result; the caller is told the recording was lost.
-      const rec = await runs.addRecording({ id: nextId(ctx), orgId: ctx.orgId, resultId: result.id, events: recording, sizeBytes: Math.floor((recording.length * 3) / 4), createdAt: at });
-      if (rec.ok) {
-        result = { ...result, recordingId: rec.value.id };
-        recordingStored = true;
-      }
+    if (!r.ok) {
+      if (r.error.kind === "conflict" && r.error.entity === "finished run") return errorResponse("conflict", "That run has already finished", 409, ctx.requestId);
+      return fromRepoError(r.error, ctx.requestId);
     }
-    return successResponse({ result: publicResult(result), recordingStored }, ctx.requestId, 201);
+    return successResponse({ result: publicResult(r.value) }, ctx.requestId, 201);
   });
 }
+
+/** Decoded size of a base64 string. */
+const base64Bytes = (b64: string) => (b64.length / 4) * 3 - (b64.endsWith("==") ? 2 : b64.endsWith("=") ? 1 : 0);
 
 // ── recordings ───────────────────────────────────────────────────────────────
 

@@ -110,7 +110,7 @@ export async function route(request: Request, env: Env, deps?: Deps): Promise<Re
         }
         const scenarioId = fromPublic("scn", itemPub);
         if (!scenarioId) return errorResponse("not_found", "Not found", 404, requestId);
-        if (verb === "approve") return method === "POST" ? rh.approveScenario(ctx, hubId, scenarioId) : methodNotAllowed(requestId);
+        if (verb === "approve") return method === "POST" ? rh.approveScenario(ctx, hubId, scenarioId, request) : methodNotAllowed(requestId);
         if (verb) return notFound(requestId, url.pathname);
         if (method === "GET") return rh.getScenario(ctx, hubId, scenarioId);
         if (method === "PATCH") return rh.updateScenario(ctx, hubId, scenarioId, request);

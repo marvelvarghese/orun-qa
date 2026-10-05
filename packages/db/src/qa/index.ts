@@ -30,6 +30,7 @@ export type {
   StepTiming,
   ApiCall,
   Recording,
+  HealthVerdict,
   CreateScenarioInput,
   UpdateScenarioInput,
   AddResultInput,

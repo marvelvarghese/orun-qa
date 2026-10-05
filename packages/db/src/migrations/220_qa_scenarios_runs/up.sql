@@ -17,11 +17,14 @@ CREATE TABLE IF NOT EXISTS qa.scenarios (
   state       TEXT NOT NULL DEFAULT 'draft' CHECK (state IN ('draft', 'approved', 'quarantined', 'archived')),
   as_role     TEXT,
   created_by  TEXT,
+  approved_by TEXT,
+  approved_at TIMESTAMPTZ,
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
   FOREIGN KEY (org_id, feature_id) REFERENCES qa.features (org_id, id)
 );
 COMMENT ON TABLE qa.scenarios IS 'A scenario that proves a feature works. Only approved scenarios run on schedule.';
+COMMENT ON COLUMN qa.scenarios.approved_at IS 'When the PM approved the current steps; only results after it count toward health. Cleared when the scenario leaves approved.';
 CREATE UNIQUE INDEX IF NOT EXISTS qa_scenarios_feature_active_name_idx
   ON qa.scenarios (org_id, feature_id, name_lower) WHERE state <> 'archived';
 CREATE UNIQUE INDEX IF NOT EXISTS qa_scenarios_org_id_id_idx ON qa.scenarios (org_id, id);

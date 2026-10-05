@@ -211,21 +211,16 @@ function slugify(name: string): string {
 const SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 
 /**
- * Each feature's health, from the newest result of each approved scenario.
+ * Each feature's health, from the newest result of each approved scenario
+ * since its approval (never a "try" run).
  * A failed read degrades to "not tested" rather than failing the whole page.
  */
 export async function healthByFeature(runs: QaRunsRepository, orgId: string, hubId: string): Promise<Map<string, FeatureHealth>> {
   const out = new Map<string, FeatureHealth>();
-  const [scenarios, latest] = await Promise.all([runs.listScenarios(orgId, hubId, { states: ["approved"] }), runs.latestResults(orgId, hubId)]);
-  if (!scenarios.ok || !latest.ok) return out;
-  const approved = new Set(scenarios.value.map((s) => s.id));
+  const latest = await runs.healthVerdicts(orgId, hubId);
+  if (!latest.ok) return out;
   const verdicts = new Map<string, Verdict[]>();
-  for (const r of latest.value) {
-    if (!approved.has(r.scenarioId)) continue;
-    const list = verdicts.get(r.featureId) ?? [];
-    list.push(r.verdict);
-    verdicts.set(r.featureId, list);
-  }
+  for (const r of latest.value) verdicts.set(r.featureId, [...(verdicts.get(r.featureId) ?? []), r.verdict]);
   for (const [featureId, v] of verdicts) out.set(featureId, deriveHealth(v));
   return out;
 }

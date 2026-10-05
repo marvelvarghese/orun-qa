@@ -13,6 +13,7 @@ import type {
   PublicHub,
   UpdateFeatureRequest,
   CreateScenarioRequest,
+  ApproveScenarioRequest,
   UpdateScenarioRequest,
   PublicScenario,
   CreateRunRequest,
@@ -138,8 +139,8 @@ export class QaClient {
   }
 
   /** The PM's sign-off: only approved scenarios count toward a feature's health. */
-  approveScenario(orgId: string, hubId: string, scenarioId: string, opts: RequestOptions = {}): Promise<{ scenario: PublicScenario }> {
-    return this.transport.request({ method: "POST", path: `${this.base(orgId, hubId)}/scenarios/${encodeURIComponent(scenarioId)}/approve` }, opts);
+  approveScenario(orgId: string, hubId: string, scenarioId: string, body: ApproveScenarioRequest, opts: RequestOptions = {}): Promise<{ scenario: PublicScenario }> {
+    return this.transport.request({ method: "POST", path: `${this.base(orgId, hubId)}/scenarios/${encodeURIComponent(scenarioId)}/approve`, body }, opts);
   }
 
   // ── QA2: runs, results and recordings ──
@@ -163,7 +164,7 @@ export class QaClient {
     runId: string,
     body: PostResultRequest,
     opts: RequestOptions = {},
-  ): Promise<{ result: PublicResult; recordingStored: boolean | null }> {
+  ): Promise<{ result: PublicResult }> {
     return this.transport.request({ method: "POST", path: `${this.base(orgId, hubId)}/runs/${encodeURIComponent(runId)}/results`, body }, opts);
   }
 
