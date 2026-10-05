@@ -49,6 +49,15 @@ export interface ScenarioOutcome {
 
 const STEP_TIMEOUT = 15_000;
 
+/** Why a step failed, in words a PM reads: no Playwright call names or stack frames. */
+export function plainReason(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err);
+  if ((err instanceof Error && err.name === "TimeoutError") || /Timeout \d+ms exceeded/.test(raw)) return `It did not happen within ${STEP_TIMEOUT / 1000} seconds.`;
+  if (/net::ERR_|ERR_NAME_NOT_RESOLVED|ECONNREFUSED/.test(raw)) return "The page could not be reached.";
+  const first = raw.split("\n")[0]!.replace(/^[a-zA-Z.]+: /, "").trim();
+  return first.endsWith(".") ? first : `${first}.`;
+}
+
 function locate(page: Page, a: { text?: string; testId?: string; role?: string; label?: string }): Locator {
   if (a.testId) return page.getByTestId(a.testId).first();
   if (a.label) return page.getByLabel(a.label).first();
@@ -180,8 +189,7 @@ export async function runScenario(browser: Browser, scenario: PublicScenario, va
         timings.push({ ord: step.ord, startMs: start, endMs: Date.now() - t0, ok: false });
         verdict = "fails";
         failingStep = step.ord;
-        const why = err instanceof Error ? err.message.split("\n")[0] : String(err);
-        message = `Step ${step.ord + 1} — “${step.text}”: could not ${describe(step.action)}. ${why}`;
+        message = `Step ${step.ord + 1}, “${step.text}”: could not ${describe(step.action)}. ${plainReason(err)}`;
         break;
       }
     }

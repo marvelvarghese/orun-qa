@@ -1,6 +1,6 @@
 import { describe as group, expect, it } from "vitest";
 import { exitCode, fillPath, findCall, matchPath, pathOf, sameScenario, type PathVars } from "./plan.js";
-import { withMarkers } from "./browser.js";
+import { plainReason, withMarkers } from "./browser.js";
 import { ORUN_QA_SELF_SCENARIOS } from "./scenarios.js";
 import { ORUN_QA_SELF } from "@saas/contracts/qa-self";
 import { RUN_LIMITS, STEP_ACTION_TYPES } from "@saas/contracts/qa";
@@ -83,5 +83,15 @@ group("withMarkers", () => {
       [3, 1200],
       [5, 6900],
     ]);
+  });
+});
+
+group("plainReason", () => {
+  it("says a timeout plainly", () => {
+    expect(plainReason(new Error("locator.waitFor: Timeout 15000ms exceeded.\nCall log: ..."))).toBe("It did not happen within 15 seconds.");
+  });
+  it("drops the call name from other errors", () => {
+    expect(plainReason(new Error("page.goto: net::ERR_CONNECTION_REFUSED at https://x"))).toBe("The page could not be reached.");
+    expect(plainReason(new Error("no GET /x answering 200 (recent calls: none)"))).toBe("no GET /x answering 200 (recent calls: none).");
   });
 });
