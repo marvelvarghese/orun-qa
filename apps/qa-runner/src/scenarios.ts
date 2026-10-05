@@ -18,10 +18,10 @@ export const ORUN_QA_SELF_SCENARIOS: DeclaredScenario[] = [
     expected: "The features home lists the product's areas and features from the map.",
     steps: [
       { text: "Open the features home", action: { type: "goto", path: "/orgs/{org}/features?hub={hub}" } },
-      { text: "The page asks to see every feature working", action: { type: "expect_text", text: "Every feature, shown working." } },
+      { text: "The page asks to see every feature working", action: { type: "expect_visible", role: "heading", text: "Every feature, shown working." } },
       { text: "The map was read", action: { type: "expect_response", method: "GET", path: MAP_CALL, status: 200 } },
-      { text: "The first area is listed", action: { type: "expect_text", text: "Workspace & people" } },
-      { text: "The second area is listed", action: { type: "expect_text", text: "The feature map" } },
+      { text: "The first area is listed", action: { type: "expect_visible", role: "heading", text: "Workspace & people" } },
+      { text: "The second area is listed", action: { type: "expect_visible", role: "heading", text: "The feature map" } },
     ],
   },
   {
@@ -30,7 +30,7 @@ export const ORUN_QA_SELF_SCENARIOS: DeclaredScenario[] = [
     expected: "A feature's page shows its name and the features affected when it breaks.",
     steps: [
       { text: "Open the Feature page feature", action: { type: "goto", path: "/orgs/{org}/features/{feature:Feature page}?hub={hub}" } },
-      { text: "Its name is the heading", action: { type: "expect_visible", text: "Feature page" } },
+      { text: "Its name is the heading", action: { type: "expect_visible", role: "heading", text: "Feature page" } },
       { text: "The ripple section is there", action: { type: "expect_text", text: "When this breaks, these are affected" } },
     ],
   },
@@ -42,7 +42,7 @@ export const ORUN_QA_SELF_SCENARIOS: DeclaredScenario[] = [
       { text: "Open Insights", action: { type: "goto", path: "/orgs/{org}/insights?hub={hub}" } },
       { text: "The heading explains the map", action: { type: "expect_text", text: "How the features lean on each other" } },
       { text: "The map was read", action: { type: "expect_response", method: "GET", path: MAP_CALL, status: 200 } },
-      { text: "The map is drawn", action: { type: "expect_text", text: "Feature dependency map" } },
+      { text: "The map is drawn", action: { type: "expect_visible", role: "heading", text: "Feature dependency map" } },
     ],
   },
 ];

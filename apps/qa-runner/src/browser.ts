@@ -16,7 +16,7 @@ const RRWEB_RECORD = readFileSync(join(dirname(require.resolve("@rrweb/record"))
 
 /** Starts rrweb in every document the page loads and streams events out. */
 const START_RECORDING = `(() => {
-  if (window.top !== window || window.__qaRecording) return;
+  if (window.top !== window || window.__qaRecording || location.protocol === "about:") return;
   window.__qaRecording = true;
   const go = () => window.rrwebRecord.record({
     emit: (e) => window.__qaEmit(JSON.stringify(e)),
@@ -52,7 +52,7 @@ const STEP_TIMEOUT = 15_000;
 function locate(page: Page, a: { text?: string; testId?: string; role?: string; label?: string }): Locator {
   if (a.testId) return page.getByTestId(a.testId).first();
   if (a.label) return page.getByLabel(a.label).first();
-  if (a.role) return page.getByRole(a.role as Parameters<Page["getByRole"]>[0], { name: a.text ?? "" }).first();
+  if (a.role) return page.getByRole(a.role as Parameters<Page["getByRole"]>[0], a.text ? { name: a.text } : {}).first();
   return page.getByText(a.text ?? "", { exact: true }).first();
 }
 
@@ -95,20 +95,44 @@ async function perform(page: Page, action: StepAction, vars: PathVars, session: 
   }
 }
 
+type RrwebEvent = { type: number; timestamp: number; data?: unknown };
+
+/**
+ * Add the step marks the player reads as chapters (rrweb custom events,
+ * tag "qa-step"), and an end mark so the timeline covers a step that waited in
+ * silence. Marks never precede the first full snapshot: a replay must open on one.
+ */
+export function withMarkers(raw: string[], t0: number, timings: StepTiming[], durationMs: number): RrwebEvent[] {
+  const events = raw.map((e) => JSON.parse(e) as RrwebEvent);
+  const firstSnapshot = events.find((e) => e.type === 2)?.timestamp;
+  if (firstSnapshot === undefined) return events;
+  const CUSTOM = 5;
+  const marks: RrwebEvent[] = timings.map((t) => ({ type: CUSTOM, timestamp: Math.max(t0 + t.startMs, firstSnapshot), data: { tag: "qa-step", payload: { ord: t.ord, ok: t.ok } } }));
+  marks.push({ type: CUSTOM, timestamp: Math.max(t0 + durationMs, firstSnapshot), data: { tag: "qa-end", payload: {} } });
+  // Stable merge: a mark sorts after any recorded event with the same timestamp.
+  return [...events.map((e, i) => ({ e, k: 0, i })), ...marks.map((e, i) => ({ e, k: 1, i }))]
+    .sort((a, b) => a.e.timestamp - b.e.timestamp || a.k - b.k || a.i - b.i)
+    .map((x) => x.e);
+}
+
 export async function runScenario(browser: Browser, scenario: PublicScenario, vars: PathVars, session: ConsoleSession): Promise<ScenarioOutcome> {
   const context = await browser.newContext({ viewport: { width: 1360, height: 860 } });
   const events: string[] = [];
   const calls: ApiCall[] = [];
   const timings: StepTiming[] = [];
   const t0 = Date.now();
+  let closed = false;
+  let recorderError = "";
   let verdict: Verdict = "works";
   let failingStep: number | null = null;
   let message = "";
 
   try {
     // The console keeps its session in localStorage: hand it the runner's token.
+    // Only the console's own top-level documents get it — never a frame or another origin.
     await context.addInitScript(
-      ({ prefix, token }) => {
+      ({ prefix, token, origin }) => {
+        if (window.top !== window || location.origin !== origin) return;
         try {
           window.localStorage.setItem(`${prefix}.token`, token);
           window.localStorage.setItem(`${prefix}.target`, "stage");
@@ -116,7 +140,7 @@ export async function runScenario(browser: Browser, scenario: PublicScenario, va
           /* storage unavailable: the scenario will fail at its first check */
         }
       },
-      { prefix: session.storagePrefix, token: session.token },
+      { prefix: session.storagePrefix, token: session.token, origin: new URL(session.consoleUrl).origin },
     );
     const record = scenario.kind === "screens_apis";
     if (record) {
@@ -129,16 +153,19 @@ export async function runScenario(browser: Browser, scenario: PublicScenario, va
 
     const page = await context.newPage();
     page.on("pageerror", (e) => {
-      if (/rrweb|__qaEmit/.test(String(e))) message = `${message} (recorder: ${String(e).slice(0, 200)})`.trim();
+      if (!recorderError && /rrweb|__qaEmit/.test(String(e))) recorderError = ` (recorder: ${String(e).slice(0, 200)})`;
     });
     const apiOrigin = new URL(session.apiUrl).origin;
     page.on("requestfinished", (req) => {
-      void (async () => {
-        if (new URL(req.url()).origin !== apiOrigin || req.method() === "OPTIONS") return;
-        const res = await req.response();
-        const t = req.timing();
-        calls.push({ method: req.method(), path: pathOf(req.url()), status: res?.status() ?? 0, ms: Math.max(0, Math.round(t.responseEnd)) });
-      })();
+      if (closed || new URL(req.url()).origin !== apiOrigin || req.method() === "OPTIONS") return;
+      // A request can finish while the context closes: never let that reject unhandled.
+      req
+        .response()
+        .then((res) => {
+          if (closed) return;
+          calls.push({ method: req.method(), path: pathOf(req.url()), status: res?.status() ?? 0, ms: Math.max(0, Math.round(req.timing().responseEnd)) });
+        })
+        .catch(() => undefined);
     });
     page.on("requestfailed", (req) => {
       if (new URL(req.url()).origin === apiOrigin && req.method() !== "OPTIONS") calls.push({ method: req.method(), path: pathOf(req.url()), status: 0, ms: 0 });
@@ -154,31 +181,33 @@ export async function runScenario(browser: Browser, scenario: PublicScenario, va
         verdict = "fails";
         failingStep = step.ord;
         const why = err instanceof Error ? err.message.split("\n")[0] : String(err);
-        message = `Step ${step.ord + 1} — “${step.text}”: could not ${describe(step.action)}. ${why}`.slice(0, RUN_LIMITS.messageMax);
+        message = `Step ${step.ord + 1} — “${step.text}”: could not ${describe(step.action)}. ${why}`;
         break;
       }
     }
     // Let the last frames reach the recording.
-    await page.waitForTimeout(600);
+    await page.waitForTimeout(600).catch(() => undefined);
   } catch (err) {
     verdict = "errored";
-    message = `The runner could not run this scenario: ${err instanceof Error ? err.message : String(err)}`.slice(0, RUN_LIMITS.messageMax);
+    message = `The runner could not run this scenario: ${err instanceof Error ? err.message : String(err)}`;
   } finally {
+    closed = true;
     await context.close().catch(() => undefined);
   }
+  const durationMs = Date.now() - t0;
 
   let recording: string | null = null;
   if (events.length > 0) {
-    const packed = gzipSync(Buffer.from(`[${events.join(",")}]`)).toString("base64");
+    const packed = gzipSync(Buffer.from(JSON.stringify(withMarkers(events, t0, timings, durationMs)))).toString("base64");
     if (packed.length <= RUN_LIMITS.recordingMax) recording = packed;
-    else message = `${message} (recording dropped: ${Math.round(packed.length / 1e6)} MB is over the limit)`.trim();
+    else message = `${message} (recording dropped: ${Math.round(packed.length / 1e6)} MB is over the limit)`;
   }
 
   return {
     verdict,
     failingStep,
-    message,
-    durationMs: Math.min(Date.now() - t0, RUN_LIMITS.durationMax),
+    message: `${message}${recorderError}`.trim().slice(0, RUN_LIMITS.messageMax),
+    durationMs: Math.min(durationMs, RUN_LIMITS.durationMax),
     stepTimings: timings.map((t) => ({ ...t, endMs: Math.min(t.endMs, RUN_LIMITS.durationMax), startMs: Math.min(t.startMs, RUN_LIMITS.durationMax) })),
     apiCalls: calls.slice(0, RUN_LIMITS.apiCallsMax).map((c) => ({ ...c, method: c.method.slice(0, 10), path: c.path.slice(0, 300), ms: Math.min(c.ms, RUN_LIMITS.durationMax) })),
     recording,

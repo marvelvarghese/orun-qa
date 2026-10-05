@@ -74,6 +74,32 @@ export function describe(action: StepAction): string {
   }
 }
 
+/** JSON with object keys sorted at every level: Postgres jsonb does not keep key order. */
+export function canonical(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map(canonical).join(",")}]`;
+  if (v && typeof v === "object") {
+    const o = v as Record<string, unknown>;
+    return `{${Object.keys(o)
+      .filter((k) => o[k] !== undefined)
+      .sort()
+      .map((k) => `${JSON.stringify(k)}:${canonical(o[k])}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(v);
+}
+
+/** The worker's own normalisation of an action: an upper-case method. */
+const normal = (a: StepAction): StepAction => (a.type === "expect_response" ? { ...a, method: a.method.toUpperCase() } : a);
+
+/** Does a stored scenario already say what the declared one says? */
+export function sameScenario(
+  stored: { expected: string; steps: { text: string; action: StepAction }[] },
+  declared: { expected?: string; steps: { text: string; action: StepAction }[] },
+): boolean {
+  const shape = (steps: { text: string; action: StepAction }[]) => canonical(steps.map((s) => ({ text: s.text.trim(), action: normal(s.action) })));
+  return stored.expected === (declared.expected ?? "").trim() && shape(stored.steps) === shape(declared.steps);
+}
+
 /** The process exit code: a failing scenario fails the job, so the pipeline shows it. */
 export function exitCode(verdicts: readonly Verdict[]): number {
   return verdicts.includes("fails") || verdicts.includes("errored") ? 1 : 0;

@@ -29,8 +29,14 @@ permissions:
 
 jobs:
   run:
-    # After CI only when main's CI (and so the stage deploy) succeeded.
-    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    # After CI only for a push to this repository's main whose CI (and so the
+    # stage deploy) succeeded — never a pull request, whose head branch may also
+    # be called main in a fork.
+    if: >-
+      ${{ github.event_name != 'workflow_run' || (
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_repository.full_name == github.repository) }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:

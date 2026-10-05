@@ -1,5 +1,6 @@
 import { describe as group, expect, it } from "vitest";
-import { exitCode, fillPath, findCall, matchPath, pathOf, type PathVars } from "./plan.js";
+import { exitCode, fillPath, findCall, matchPath, pathOf, sameScenario, type PathVars } from "./plan.js";
+import { withMarkers } from "./browser.js";
 import { ORUN_QA_SELF_SCENARIOS } from "./scenarios.js";
 import { ORUN_QA_SELF } from "@saas/contracts/qa-self";
 import { RUN_LIMITS, STEP_ACTION_TYPES } from "@saas/contracts/qa";
@@ -54,5 +55,33 @@ group("Orun QA's own scenarios", () => {
   it("names are unique", () => {
     const names = ORUN_QA_SELF_SCENARIOS.map((s) => s.name.toLowerCase());
     expect(new Set(names).size).toBe(names.length);
+  });
+});
+
+group("sameScenario", () => {
+  const declared = { expected: "Draws", steps: [{ text: "Map", action: { type: "expect_response" as const, method: "get", path: "/x", status: 200 } }] };
+  it("ignores the key order jsonb returns, and the method's case", () => {
+    const stored = { expected: "Draws", steps: [{ text: "Map", action: { path: "/x", type: "expect_response", status: 200, method: "GET" } as never }] };
+    expect(sameScenario(stored, declared)).toBe(true);
+  });
+  it("sees a real change", () => {
+    const stored = { expected: "Draws", steps: [{ text: "Map", action: { type: "expect_response" as const, method: "GET", path: "/y", status: 200 } }] };
+    expect(sameScenario(stored, declared)).toBe(false);
+    expect(sameScenario({ ...declared, expected: "Other" }, declared)).toBe(false);
+  });
+});
+
+group("withMarkers", () => {
+  it("adds step and end marks after the first full snapshot, in time order", () => {
+    const raw = [{ type: 4, timestamp: 1000 }, { type: 2, timestamp: 1005 }, { type: 3, timestamp: 1200 }].map((e) => JSON.stringify(e));
+    const out = withMarkers(raw, 900, [{ ord: 0, startMs: 0, endMs: 200, ok: true }, { ord: 1, startMs: 250, endMs: 5000, ok: false }], 6000);
+    expect(out.map((e) => [e.type, e.timestamp])).toEqual([
+      [4, 1000],
+      [2, 1005],
+      [5, 1005],
+      [5, 1150],
+      [3, 1200],
+      [5, 6900],
+    ]);
   });
 });
