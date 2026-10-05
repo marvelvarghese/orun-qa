@@ -1,0 +1,23 @@
+apiVersion: orun.io/v1
+kind: TaskContract
+metadata:
+  name: QA-9
+spec:
+  goal: Orun QA stores scenarios with plain steps, runs of a hub, one result per scenario per run and the rrweb DOM recording of a result, and derives each feature's health from the newest results of its approved scenarios.
+  affects:
+    - default/orun-qa/qa-worker
+    - default/orun-qa/api-edge
+    - default/orun-qa/db
+    - default/orun-qa/db-migrate
+    - default/orun-qa/db-tests
+    - default/orun-qa/contracts
+    - default/orun-qa/sdk
+    - default/orun-qa/policy-engine
+    - default/orun-qa/policy-engine-tests
+    - default/orun-qa/qa-worker-tests
+  doneWhen:
+    - a builder writes a scenario as a draft and only the PM approves it, pinned to the version they reviewed; changing an approved scenario's steps sends it back for approval
+    - a runner opens a run, posts results with a gzip+base64 rrweb recording, and finishes it; the run's status follows its results
+    - the map, the feature list and a feature report health from the newest result of each approved scenario since its approval, never from a try run
+    - a recording is readable only through its own hub; a deny is a 404
+  gates: []

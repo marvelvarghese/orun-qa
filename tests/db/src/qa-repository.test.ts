@@ -57,7 +57,7 @@ describe("200_qa_feature_map migration", () => {
   it("registers 'qa' as a bounded context and sits at the manifest tail, in order", () => {
     expect(BOUNDED_CONTEXTS).toContain("qa");
     const ids = manifest.migrations.map((m) => m.id);
-    expect(ids.slice(-2)).toEqual(["200_qa_feature_map", "210_qa_feature_name_active"]);
+    expect(ids.slice(-3)).toEqual(["200_qa_feature_map", "210_qa_feature_name_active", "220_qa_scenarios_runs"]);
   });
 
   it("has manifest checksums matching the on-disk up.sql files", () => {

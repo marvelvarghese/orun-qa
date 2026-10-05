@@ -4,8 +4,8 @@ import { replayOrExecute } from "./idempotency.js";
 import { resolveActor } from "./resolve-actor.js";
 import { createTimings } from "@saas/contracts/timing";
 
-// Orun QA (QA1): /v1/organizations/{org}/qa/hubs[/{hub}[/areas|features|map|edges[/{id}[/confirm]]]]
-const QA_RE = /^\/v1\/organizations\/[^/]+\/qa\/hubs(?:\/[^/]+(?:\/(?:areas|features|map|edges|import)(?:\/[^/]+(?:\/confirm)?)?)?)?$/;
+// Orun QA: /v1/organizations/{org}/qa/hubs[/{hub}[/{collection}[/{id}[/{verb}]]]]
+const QA_RE = /^\/v1\/organizations\/[^/]+\/qa\/hubs(?:\/[^/]+(?:\/(?:areas|features|map|edges|import|scenarios|runs|recordings)(?:\/[^/]+(?:\/(?:confirm|approve|finish|results))?)?)?)?$/;
 const ALLOWED_METHODS = new Set(["GET", "POST", "PATCH", "DELETE"]);
 const WITH_BODY = new Set(["POST", "PATCH"]);
 const FORWARDED_HEADERS = ["content-type", "traceparent", "idempotency-key"];
