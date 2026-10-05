@@ -26,7 +26,7 @@ spec:
         - "All tests lists every scenario and expands to the API calls it checked"
         - "Try a scenario answers a plain question with a recording"
         - "every Orun QA feature shipped so far is verified by its own scenarios on its own stage"
-      tasks: [QA-9, QA-10, QA-12, QA-14]
+      tasks: [QA-9, QA-10, QA-12, QA-13, QA-14]
     - name: "QA3 — bugs, trackers and developer verification"
       exitCriteria:
         - "a stage failure becomes a Linear or Jira issue with the recording, assigned to the last author"

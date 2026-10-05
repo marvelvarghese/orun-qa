@@ -95,3 +95,10 @@ group("plainReason", () => {
     expect(plainReason(new Error("no GET /x answering 200 (recent calls: none)"))).toBe("no GET /x answering 200 (recent calls: none).");
   });
 });
+
+group("coverage", () => {
+  it("proves every feature of Orun QA's own map", () => {
+    const covered = new Set(ORUN_QA_SELF_SCENARIOS.map((s) => s.feature.toLowerCase()));
+    expect(ORUN_QA_SELF.features.filter((f) => !covered.has(f.name.toLowerCase())).map((f) => f.name)).toEqual([]);
+  });
+});

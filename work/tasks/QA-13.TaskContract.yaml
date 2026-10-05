@@ -1,0 +1,12 @@
+apiVersion: orun.io/v1
+kind: TaskContract
+metadata:
+  name: QA-13
+spec:
+  goal: Every feature of Orun QA's own map is proved by at least one of its own scenarios, run by the runner on its own stage, so the self hub shows each feature verified or broken from real recordings.
+  affects:
+    - default/orun-qa/qa-runner
+  doneWhen:
+    - each of the eight features in ORUN_QA_SELF has an approved scenario in the self hub
+    - after a run on stage, every one of them shows verified with a recording, or broken with the step that failed
+  gates: []
