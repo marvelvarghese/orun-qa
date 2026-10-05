@@ -121,8 +121,11 @@ export class QaClient {
 
   // ── QA2: scenarios ──
 
-  listScenarios(orgId: string, hubId: string, query: { feature?: string } = {}, opts: RequestOptions = {}): Promise<{ scenarios: PublicScenario[] }> {
-    const qs = query.feature ? `?feature=${encodeURIComponent(query.feature)}` : "";
+  listScenarios(orgId: string, hubId: string, query: { feature?: string; archived?: boolean } = {}, opts: RequestOptions = {}): Promise<{ scenarios: PublicScenario[] }> {
+    const params = new URLSearchParams();
+    if (query.feature) params.set("feature", query.feature);
+    if (query.archived) params.set("archived", "1");
+    const qs = params.size > 0 ? `?${params.toString()}` : "";
     return this.transport.request({ method: "GET", path: `${this.base(orgId, hubId)}/scenarios${qs}` }, opts);
   }
 

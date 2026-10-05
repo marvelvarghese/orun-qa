@@ -90,12 +90,12 @@ function parseAction(v: unknown): StepAction | string {
       return isPath(v.path) ? { type: "goto", path: v.path as string } : "goto needs a path starting with /";
     case "click":
     case "expect_visible": {
-      if (!optShort(v.text, max) || !optShort(v.testId, max) || (v.type === "click" && !optShort(v.role, 40))) return "text, testId and role are short strings";
+      if (!optShort(v.text, max) || !optShort(v.testId, max) || !optShort(v.role, 40)) return "text, testId and role are short strings";
       if (v.text === undefined && v.testId === undefined) return `${v.type} needs text or testId`;
       const a: Record<string, unknown> = { type: v.type };
       if (v.text !== undefined) a.text = v.text;
       if (v.testId !== undefined) a.testId = v.testId;
-      if (v.type === "click" && v.role !== undefined) a.role = v.role;
+      if (v.role !== undefined) a.role = v.role;
       return a as StepAction;
     }
     case "fill": {
@@ -180,7 +180,7 @@ export function listScenarios(ctx: Ctx, hubId: string, url: URL): Promise<Respon
     const hub = await repo.getHub(ctx.orgId, hubId);
     if (!hub.ok) return fromRepoError(hub.error, ctx.requestId);
     const [r, last] = await Promise.all([
-      runs.listScenarios(ctx.orgId, hubId, featureId ? { featureId } : {}),
+      runs.listScenarios(ctx.orgId, hubId, { ...(featureId ? { featureId } : {}), includeArchived: url.searchParams.get("archived") === "1" }),
       latestByScenario(runs, ctx.orgId, hubId),
     ]);
     if (!r.ok) return fromRepoError(r.error, ctx.requestId);

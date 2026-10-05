@@ -155,7 +155,8 @@ export interface AddResultInput {
 export interface QaRunsRepository {
   createScenario(input: CreateScenarioInput): Promise<QaResult<Scenario>>;
   getScenario(orgId: string, hubId: string, id: string): Promise<QaResult<Scenario>>;
-  listScenarios(orgId: string, hubId: string, filter?: { featureId?: string }): Promise<QaResult<Scenario[]>>;
+  /** Live scenarios (draft, approved, quarantined); archived ones too when asked. */
+  listScenarios(orgId: string, hubId: string, filter?: { featureId?: string; includeArchived?: boolean }): Promise<QaResult<Scenario[]>>;
   updateScenario(orgId: string, hubId: string, id: string, input: UpdateScenarioInput): Promise<QaResult<Scenario>>;
   /**
    * Approve exactly the version the PM saw: conflict when the scenario changed
@@ -360,7 +361,7 @@ export function createQaRunsRepository(executor: SqlExecutor | TransactionalSqlE
     listScenarios(orgId, hubId, filter = {}) {
       return guard("scenario", async () => {
         const params: unknown[] = [orgId, hubId];
-        let where = `org_id = $1 AND hub_id = $2 AND state IN ('draft', 'approved', 'quarantined')`;
+        let where = filter.includeArchived ? `org_id = $1 AND hub_id = $2` : `org_id = $1 AND hub_id = $2 AND state IN ('draft', 'approved', 'quarantined')`;
         if (filter.featureId) {
           params.push(filter.featureId);
           where += ` AND feature_id = $${params.length}`;

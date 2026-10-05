@@ -179,7 +179,8 @@ export type StepAction =
   | { type: "press"; key: string }
   | { type: "expect_text"; text: string }
   | { type: "expect_url"; path: string }
-  | { type: "expect_visible"; text?: string; testId?: string }
+  /** With a role, the element must have it, e.g. { role: "heading", text: "Archive a project" }. */
+  | { type: "expect_visible"; text?: string; testId?: string; role?: string }
   | { type: "expect_response"; method: string; path: string; status: number };
 
 export const STEP_ACTION_TYPES = ["goto", "click", "fill", "press", "expect_text", "expect_url", "expect_visible", "expect_response"] as const;

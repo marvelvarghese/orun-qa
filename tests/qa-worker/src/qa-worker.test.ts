@@ -420,6 +420,8 @@ describe("qa-worker", () => {
     expect(renamed.data!.scenario.state).toBe("approved");
     expect((await t.call("PATCH", `${base}/${id}`, { state: "archived" })).data!.scenario.state).toBe("archived");
     expect((await t.call("PATCH", `${base}/${id}`, { name: "Again" })).status).toBe(409);
+    expect((await t.call("GET", base)).data!.scenarios).toHaveLength(0);
+    expect((await t.call("GET", `${base}?archived=1`)).data!.scenarios.map((x: any) => x.state)).toEqual(["archived"]);
   });
 
   it("validates scenario steps and refuses a feature from elsewhere", async () => {
