@@ -80,6 +80,8 @@ export function RecordingPlayer({ load, steps, timings, verdict, failingStep, re
   const [now, setNow] = React.useState(0);
   const [total, setTotal] = React.useState(0);
   const [offsets, setOffsets] = React.useState<Map<number, number>>(new Map());
+  // A jump asked for before this recording mounted belongs to another one.
+  const mountedJump = React.useRef(seekTo?.nonce);
 
   // Load, unpack and mount the replayer once per recording.
   React.useEffect(() => {
@@ -149,6 +151,7 @@ export function RecordingPlayer({ load, steps, timings, verdict, failingStep, re
   }, [offsets, now]);
 
   React.useEffect(() => onStep?.(current), [current, onStep]);
+  React.useEffect(() => () => onStep?.(null), [onStep]);
 
   const seek = React.useCallback(
     (ms: number, play: boolean) => {
@@ -164,15 +167,20 @@ export function RecordingPlayer({ load, steps, timings, verdict, failingStep, re
   );
 
   React.useEffect(() => {
-    if (!seekTo || state !== "ready") return;
+    if (!seekTo || state !== "ready" || seekTo.nonce === mountedJump.current) return;
     const at = offsets.get(seekTo.ord);
     if (at !== undefined) seek(at, true);
   }, [seekTo, state, offsets, seek]);
 
   const toggle = () => {
-    if (state !== "ready") return;
-    if (playing) seek(now, false);
-    else seek(now >= total ? 0 : now, true);
+    const p = playerRef.current;
+    if (state !== "ready" || !p) return;
+    if (playing) {
+      // A plain pause keeps the frame; pause(time) would rebuild the page from the start.
+      p.pause();
+      setNow(Math.min(p.getCurrentTime(), total));
+      setPlaying(false);
+    } else seek(now >= total ? 0 : now, true);
   };
 
   const failed = verdict === "fails" || verdict === "errored";
@@ -225,14 +233,17 @@ export function RecordingPlayer({ load, steps, timings, verdict, failingStep, re
           aria-valuemin={0}
           aria-valuemax={Math.round(total / 1000)}
           aria-valuenow={Math.round(now / 1000)}
+          aria-valuetext={`${clock(now)} of ${clock(total)}`}
           tabIndex={0}
           onClick={(e) => {
             const r = e.currentTarget.getBoundingClientRect();
             seek(((e.clientX - r.left) / r.width) * total, playing);
           }}
           onKeyDown={(e) => {
-            if (e.key === "ArrowRight") seek(now + 2000, playing);
-            if (e.key === "ArrowLeft") seek(now - 2000, playing);
+            const to = e.key === "ArrowRight" ? now + 2000 : e.key === "ArrowLeft" ? now - 2000 : e.key === "Home" ? 0 : e.key === "End" ? total : null;
+            if (to === null) return;
+            e.preventDefault();
+            seek(to, playing);
           }}
           style={{ flex: "1 1 200px", height: 6, borderRadius: 999, background: "#EFEDE8", position: "relative", cursor: "pointer" }}
         >

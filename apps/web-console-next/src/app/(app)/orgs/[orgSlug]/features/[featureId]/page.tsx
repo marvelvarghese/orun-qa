@@ -39,8 +39,14 @@ function Inner({ orgId, orgSlug, hubId, featureId }: { orgId: string; orgSlug: s
   const [picked, setPicked] = React.useState<string | null>(useSearchParams()?.get("scenario") ?? null);
   // Show the scenario that needs attention first: a failing one, else the first recorded one.
   const list = scenarios.data ?? [];
-  const selectedId =
-    picked ?? list.find((s) => s.state === "approved" && s.last && s.last.verdict !== "works")?.id ?? list.find((s) => s.last?.recordingId)?.id ?? list[0]?.id ?? null;
+  // A ?scenario= from elsewhere counts only if it is one of this feature's.
+  const pickedOk = picked && list.some((s) => s.id === picked) ? picked : null;
+  const fallback = list.find((s) => s.state === "approved" && s.last && s.last.verdict !== "works")?.id ?? list.find((s) => s.last?.recordingId)?.id ?? list[0]?.id ?? null;
+  // Settle the default once, so a background refresh never switches the scenario under the viewer.
+  React.useEffect(() => {
+    if (!pickedOk && fallback) setPicked(fallback);
+  }, [pickedOk, fallback]);
+  const selectedId = pickedOk ?? fallback;
   const scenario = useApiQuery(
     qk.qaScenario(orgId, hubId, selectedId ?? "none"),
     () => wrap(() => client.qa.getScenario(orgId, hubId, selectedId!)),
@@ -99,7 +105,8 @@ function Inner({ orgId, orgSlug, hubId, featureId }: { orgId: string; orgSlug: s
       return;
     }
     toast({ kind: "success", title: "Approved", description: "It now counts toward this feature's health." });
-    scenarios.reload();
+    void qc.invalidateQueries({ queryKey: ["qa", "scenarios", orgId, hubId] });
+    void qc.invalidateQueries({ queryKey: qk.qaScenario(orgId, hubId, sc.id) });
   };
 
   return (
@@ -115,7 +122,7 @@ function Inner({ orgId, orgSlug, hubId, featureId }: { orgId: string; orgSlug: s
       scenarios={scenarios.loading ? null : list}
       selectedScenarioId={selectedId}
       onSelectScenario={setPicked}
-      history={scenario.data?.history ?? []}
+      history={scenario.data?.scenario.id === selectedId ? scenario.data.history : []}
       loadRecording={loadRecording}
       onApprove={onApprove}
     />

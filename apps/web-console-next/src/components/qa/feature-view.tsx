@@ -128,24 +128,35 @@ export function FeatureView({
 }: FeatureViewProps) {
   const [description, setDescription] = React.useState<string | null>(null);
   const [saving, setSaving] = React.useState(false);
-  const [which, setWhich] = React.useState<"latest" | "verified">("latest");
+  // The recording choice belongs to one scenario: another scenario opens on its newest.
+  const [choice, setChoice] = React.useState<{ scenario: string | null; which: "latest" | "verified" }>({ scenario: null, which: "latest" });
   const [seekTo, setSeekTo] = React.useState<{ ord: number; nonce: number } | null>(null);
   const [playingStep, setPlayingStep] = React.useState<number | null>(null);
   const [approving, setApproving] = React.useState<string | null>(null);
   const onStep = React.useCallback((ord: number | null) => setPlayingStep(ord), []);
-  React.useEffect(() => setWhich("latest"), [selectedScenarioId]);
 
   const selected = scenarios?.find((s) => s.id === selectedScenarioId) ?? null;
   const latest = history[0] ?? selected?.last ?? null;
   const verified = history.find((r) => r.verdict === "works" && r.recordingId) ?? null;
-  const shown = which === "verified" && verified ? verified : latest;
+  const which = choice.scenario === selectedScenarioId ? choice.which : "latest";
+  const setWhich = (w: "latest" | "verified") => setChoice({ scenario: selectedScenarioId, which: w });
+  // With no recording on the newest result, show the last verified one rather than nothing.
+  const shown = (which === "verified" || !latest?.recordingId) && verified ? verified : latest;
+  // A chapter jump belongs to the recording it was made on.
+  const shownKey = `${selectedScenarioId}:${shown?.recordingId ?? "none"}`;
+  const [jumpKey, setJumpKey] = React.useState(shownKey);
+  if (jumpKey !== shownKey) {
+    setJumpKey(shownKey);
+    setSeekTo(null);
+    setPlayingStep(null);
+  }
   const recordingChoices = [
     latest?.recordingId
       ? {
           id: "latest" as const,
           label: (
             <>
-              {latest.verdict === "works" ? "Newest · verified " : "Newest · failed "}
+              {latest.verdict === "works" ? "Newest · verified " : latest.verdict === "fails" ? "Newest · failed " : "Newest · could not run "}
               <When iso={latest.createdAt} />
             </>
           ),
@@ -221,7 +232,8 @@ export function FeatureView({
             {recordingChoices.length > 0 && (
               <div style={{ display: "flex", gap: 4, padding: "4px 4px 10px", flexWrap: "wrap" }} role="group" aria-label="Which recording">
                 {recordingChoices.map((c) => (
-                  <button key={c.id} type="button" className={(shown === latest ? "latest" : "verified") === c.id ? "chip on" : "chip"} onClick={() => setWhich(c.id)}>
+                  <button key={c.id} type="button" className={(shown === latest ? "latest" : "verified") === c.id ? "chip on" : "chip"}
+                    aria-pressed={(shown === latest ? "latest" : "verified") === c.id} onClick={() => setWhich(c.id)}>
                     {c.label}
                   </button>
                 ))}
@@ -345,16 +357,6 @@ export function FeatureView({
                 return (
                   <div
                     key={sc.id}
-                    role="button"
-                    tabIndex={0}
-                    aria-pressed={on}
-                    onClick={() => onSelectScenario(sc.id)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        onSelectScenario(sc.id);
-                      }
-                    }}
                     style={{
                       display: "flex",
                       gap: 16,
@@ -362,30 +364,36 @@ export function FeatureView({
                       padding: "16px 18px",
                       borderBottom: i === (scenarios ?? []).length - 1 ? 0 : "1px solid #EFEDE8",
                       flexWrap: "wrap",
-                      cursor: "pointer",
                       background: on ? "#FBFAF8" : "transparent",
                       boxShadow: on ? "inset 3px 0 0 #171717" : "none",
                     }}
                   >
-                    <span className={pill.cls}>
-                      <i />
-                      {pill.label}
-                    </span>
-                    <div style={{ flex: "1 1 240px" }}>
-                      <div style={{ fontWeight: 600 }}>{sc.name}</div>
-                      {sc.expected && (
-                        <div className="muted" style={{ fontSize: 13 }}>
-                          {sc.expected}
-                        </div>
-                      )}
-                    </div>
+                    {/* The row selects through its own button; Approve is a sibling, never nested. */}
+                    <button
+                      type="button"
+                      aria-pressed={on}
+                      onClick={() => onSelectScenario(sc.id)}
+                      style={{ flex: "1 1 320px", minWidth: 0, display: "flex", gap: 16, alignItems: "center", padding: 0, border: 0, background: "transparent", textAlign: "left", cursor: "pointer", font: "inherit", color: "inherit" }}
+                    >
+                      <span className={pill.cls}>
+                        <i />
+                        {pill.label}
+                      </span>
+                      <span style={{ flex: "1 1 240px", minWidth: 0 }}>
+                        <span style={{ display: "block", fontWeight: 600 }}>{sc.name}</span>
+                        {sc.expected && (
+                          <span className="muted" style={{ display: "block", fontSize: 13 }}>
+                            {sc.expected}
+                          </span>
+                        )}
+                      </span>
+                    </button>
                     {sc.state === "draft" && onApprove ? (
                       <button
                         type="button"
                         className="btn"
                         disabled={approving === sc.id}
-                        onClick={async (e) => {
-                          e.stopPropagation();
+                        onClick={async () => {
                           setApproving(sc.id);
                           await onApprove(sc);
                           setApproving(null);

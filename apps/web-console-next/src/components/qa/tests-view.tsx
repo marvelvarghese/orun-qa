@@ -33,26 +33,35 @@ const RESULT = {
 
 /** A step path pattern ({org}, {hub}…) matched against a call the page made, one segment per placeholder. */
 export function matchesCall(check: ApiCheck, call: ApiCall): boolean {
-  if (call.method !== check.method.toUpperCase() || call.status !== check.status) return false;
+  if (call.method.toUpperCase() !== check.method.toUpperCase() || call.status !== check.status) return false;
   const want = check.path.split("?")[0]!.replace(/\/+$/, "").split("/");
-  const got = call.path.replace(/\/+$/, "").split("/");
+  const got = call.path.split("?")[0]!.replace(/\/+$/, "").split("/");
   return want.length === got.length && want.every((seg, i) => seg === "*" || /^\{[^}]+\}$/.test(seg) || seg === got[i]);
 }
 
 const shownPath = (p: string) => p.replace(/\{([^}]+)\}/g, (_, k: string) => `{${k.replace(/^feature:.*/, "feature")}}`);
 
+/**
+ * A check's state comes from the run's own step verdicts; the recorded calls
+ * only add the detail (status and time), since the same endpoint may be hit
+ * more than once.
+ */
 function apiState(sc: PublicScenario, check: ApiCheck, ord: number): { cls: string; label: string; tech: string } {
   const tech = `${check.method.toUpperCase()} ${shownPath(check.path)}`;
   const last = sc.last;
   if (!last) return { cls: "pill neutral", label: "Not run", tech: `${tech} · expects ${check.status}` };
-  const call = last.apiCalls.find((c) => matchesCall(check, c));
-  if (call) return { cls: "pill ok", label: "Works", tech: `${tech} · ${call.status} · ${call.ms} ms` };
-  if (last.failingStep === ord) {
-    const same = last.apiCalls.find((c) => c.method === check.method.toUpperCase() && matchesCall({ ...check, status: c.status }, c));
-    return { cls: "pill bad", label: "Fails", tech: same ? `${tech} · ${same.status}, expected ${check.status}` : `${tech} · not called, expected ${check.status}` };
+  const sameEndpoint = last.apiCalls.filter((c) => matchesCall({ ...check, status: c.status }, c));
+  if (last.failingStep === ord && last.verdict !== "works") {
+    const wrong = sameEndpoint.find((c) => c.status !== check.status);
+    return { cls: "pill bad", label: "Fails", tech: wrong ? `${tech} · ${wrong.status}, expected ${check.status}` : `${tech} · not called, expected ${check.status}` };
   }
-  if (last.failingStep !== null && ord > last.failingStep) return { cls: "pill neutral", label: "Skipped", tech: `${tech} · not reached` };
-  return { cls: "pill neutral", label: "Not seen", tech: `${tech} · expects ${check.status}` };
+  if (last.failingStep !== null && last.verdict !== "works" && ord > last.failingStep) return { cls: "pill neutral", label: "Skipped", tech: `${tech} · not reached` };
+  const timing = last.stepTimings.find((t) => t.ord === ord);
+  if (timing?.ok || (last.verdict === "works" && !timing)) {
+    const call = sameEndpoint.find((c) => c.status === check.status);
+    return { cls: "pill ok", label: "Works", tech: call ? `${tech} · ${call.status} · ${call.ms} ms` : `${tech} · ${check.status}` };
+  }
+  return { cls: "pill neutral", label: "Not run", tech: `${tech} · expects ${check.status}` };
 }
 
 const cadence = (c: PublicScenario["cadence"]) => (c === "daily" ? "daily" : c === "release" ? "every release" : "on demand");
@@ -74,7 +83,7 @@ function Row({ sc, featureName, open, onToggle, recordingHref }: { sc: PublicSce
   const id = `test-${sc.id}`;
   return (
     <div style={{ borderBottom: "1px solid #EFEDE8" }}>
-      <button type="button" className="row" onClick={onToggle} aria-expanded={open} aria-controls={id}>
+      <button type="button" className="row" onClick={onToggle} aria-expanded={open} aria-controls={open ? id : undefined}>
         <span className={result.cls} style={{ minWidth: 76, justifyContent: "center" }}>
           <i />
           {result.label}
@@ -158,13 +167,15 @@ export function TestsView({ scenarios, features, lastRun, recordingHref, tryHref
 
   const approved = scenarios.filter((s) => s.state === "approved");
   const working = approved.filter((s) => s.last?.verdict === "works").length;
-  const notWorking = scenarios.filter((s) => s.last && s.last.verdict !== "works").length;
+  // "Not working" means an approved scenario whose newest result did not pass — the rows that say so.
+  const failing = (s: PublicScenario) => s.state === "approved" && s.last !== null && (s.last.verdict === "fails" || s.last.verdict === "errored");
+  const notWorking = scenarios.filter(failing).length;
   const apiChecks = scenarios.reduce((n, s) => n + s.steps.filter((st) => st.action.type === "expect_response").length, 0);
   const keep = (s: PublicScenario) =>
     filter === "all" ||
     (filter === "screens" && s.kind === "screens_apis") ||
     (filter === "api" && s.kind === "api_only") ||
-    (filter === "failing" && s.last !== null && s.last.verdict !== "works");
+    (filter === "failing" && failing(s));
   const filters: [Filter, string][] = [
     ["all", `All · ${scenarios.length}`],
     ["screens", "Screens + APIs"],
