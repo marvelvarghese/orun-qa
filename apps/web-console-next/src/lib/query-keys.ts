@@ -13,6 +13,9 @@ export const qk = {
   qaHubs: (orgId: string) => ["qa", "hubs", orgId] as const,
   qaMap: (orgId: string, hubId: string) => ["qa", "map", orgId, hubId] as const,
   qaFeature: (orgId: string, hubId: string, featureId: string) => ["qa", "feature", orgId, hubId, featureId] as const,
+  qaScenarios: (orgId: string, hubId: string, featureId?: string) => ["qa", "scenarios", orgId, hubId, featureId ?? "all"] as const,
+  qaRuns: (orgId: string, hubId: string) => ["qa", "runs", orgId, hubId] as const,
+  qaScenario: (orgId: string, hubId: string, scenarioId: string) => ["qa", "scenario", orgId, hubId, scenarioId] as const,
   environments: (orgId: string, projectId: string) =>
     ["environments", orgId, projectId] as const,
   members: (orgId: string) => ["members", orgId] as const,
