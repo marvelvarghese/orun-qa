@@ -1,3 +1,4 @@
+import { ORGANIZATION_ACTIONS } from "@saas/contracts/policy";
 import { route } from "@policy-worker/router";
 import type { Env } from "@policy-worker/env";
 import * as fs from "fs";
@@ -52,6 +53,7 @@ describe("policy-worker routes", () => {
       expect(body.service).toBe("policy-worker");
       expect(body.environment).toBe("test");
       expect(body.policyVersion).toBe(1);
+      expect((body as unknown as { organizationActions: number }).organizationActions).toBe(ORGANIZATION_ACTIONS.length);
       expect(body.status).toBe("ok");
       expect(body.timestamp).toBeDefined();
     });
