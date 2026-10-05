@@ -1,0 +1,53 @@
+name: Orun QA run
+
+# Orun QA tests itself on its own stage: after every main deploy, every night,
+# and on demand. The runner signs in to stage, runs each approved scenario in a
+# headless browser with rrweb recording the DOM, and posts the results and
+# recordings to the run. A failing scenario fails this workflow.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  schedule:
+    - cron: "30 2 * * *"
+  workflow_dispatch:
+    inputs:
+      trigger:
+        description: "What this run counts as"
+        type: choice
+        options: [manual, deploy, schedule]
+        default: manual
+
+# One run at a time against stage; a newer trigger waits rather than cancelling one mid-recording.
+concurrency:
+  group: qa-run
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    # After CI only when main's CI (and so the stage deploy) succeeded.
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.12.1
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --filter "@saas/qa-runner..."
+      - run: pnpm --filter @saas/qa-runner exec playwright install --with-deps chromium
+      - name: Run Orun QA's scenarios on stage
+        run: pnpm --filter @saas/qa-runner start
+        env:
+          QA_TRIGGER: ${{ github.event_name == 'workflow_run' && 'deploy' || github.event_name == 'schedule' && 'schedule' || inputs.trigger }}
+          QA_REF: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}

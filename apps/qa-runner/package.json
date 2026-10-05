@@ -1,0 +1,27 @@
+{
+  "name": "@saas/qa-runner",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "start": "node build.mjs && node dist/runner.mjs",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@saas/eslint-config": "workspace:*",
+    "@saas/tsconfig": "workspace:*",
+    "@types/node": "^22.10.0",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.8.3",
+    "vitest": "^2.1.9"
+  },
+  "dependencies": {
+    "@rrweb/record": "2.1.7",
+    "@saas/contracts": "workspace:*",
+    "@saas/sdk": "workspace:*",
+    "playwright": "1.63.0"
+  }
+}
