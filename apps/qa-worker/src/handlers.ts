@@ -1,16 +1,19 @@
 import type { Env } from "./env.js";
-import type { QaRepository, QaRepositoryError, Hub, Area, Feature, FeatureEdge } from "@saas/db/qa";
-import { createQaRepository } from "@saas/db/qa";
+import type { QaRepository, QaRepositoryError, QaRunsRepository, Hub, Area, Feature, FeatureEdge } from "@saas/db/qa";
+import { createQaRepository, createQaRunsRepository } from "@saas/db/qa";
 import { createSqlExecutor } from "@saas/db/hyperdrive";
 import {
   QA_LIMITS,
   MANIFEST_LIMITS,
   computeRipple,
+  deriveHealth,
+  type FeatureHealth,
   type ImportResult,
   type PublicArea,
   type PublicFeature,
   type PublicFeatureEdge,
   type PublicHub,
+  type Verdict,
 } from "@saas/contracts/qa";
 import { fetchAuthorizationContext } from "./membership-client.js";
 import { authorizeViaPolicy } from "./policy-client.js";
@@ -25,6 +28,7 @@ export interface ActorContext {
 /** Test seams: a repository double, a clock and an id source. */
 export interface Deps {
   repo?: QaRepository;
+  runs?: QaRunsRepository;
   now?: () => Date;
   newId?: () => string;
 }
@@ -37,7 +41,7 @@ export interface Ctx {
   deps?: Deps | undefined;
 }
 
-type Fields = Record<string, string[]>;
+export type Fields = Record<string, string[]>;
 
 // ── public shapes ────────────────────────────────────────────────────────────
 
@@ -58,7 +62,7 @@ export function publicArea(a: Area): PublicArea {
   return { id: toPublic("area", a.id), hubId: toPublic("hub", a.hubId), name: a.name, position: a.position };
 }
 
-export function publicFeature(f: Feature): PublicFeature {
+export function publicFeature(f: Feature, health: FeatureHealth = "not_tested"): PublicFeature {
   return {
     id: toPublic("feat", f.id),
     hubId: toPublic("hub", f.hubId),
@@ -70,8 +74,7 @@ export function publicFeature(f: Feature): PublicFeature {
     public: f.isPublic,
     codeRefs: f.codeRefs,
     specLinks: f.specLinks,
-    // QA1 has no runner yet: nothing has been verified. QA2 derives this from results.
-    health: "not_tested",
+    health,
     status: f.status,
     createdAt: f.createdAt.toISOString(),
     updatedAt: f.updatedAt.toISOString(),
@@ -94,11 +97,11 @@ function unavailable(requestId: string): Response {
   return errorResponse("internal_error", "Service unavailable", 503, requestId);
 }
 
-function notFound(requestId: string): Response {
+export function notFound(requestId: string): Response {
   return errorResponse("not_found", "Not found", 404, requestId);
 }
 
-function fromRepoError(err: QaRepositoryError, requestId: string): Response {
+export function fromRepoError(err: QaRepositoryError, requestId: string): Response {
   switch (err.kind) {
     case "not_found":
       return notFound(requestId);
@@ -112,7 +115,7 @@ function fromRepoError(err: QaRepositoryError, requestId: string): Response {
 }
 
 /** Deny is always 404: a caller outside the organization learns nothing about it. */
-async function allowed(ctx: Ctx, action: string): Promise<boolean> {
+export async function allowed(ctx: Ctx, action: string): Promise<boolean> {
   const { env, actor, orgId, requestId } = ctx;
   const membership = await fetchAuthorizationContext(env.MEMBERSHIP_WORKER!, actor.subjectId, actor.subjectType, orgId, requestId);
   if (!membership.ok) return false;
@@ -128,15 +131,15 @@ async function allowed(ctx: Ctx, action: string): Promise<boolean> {
   return decision.allow;
 }
 
-async function withRepo(ctx: Ctx, action: string, fn: (repo: QaRepository) => Promise<Response>): Promise<Response> {
+export async function withRepo(ctx: Ctx, action: string, fn: (repo: QaRepository, runs: QaRunsRepository) => Promise<Response>): Promise<Response> {
   const { env, requestId, deps } = ctx;
   if (!env.MEMBERSHIP_WORKER || !env.POLICY_WORKER) return unavailable(requestId);
-  if (!deps?.repo && !env.PLATFORM_DB) return unavailable(requestId);
+  if (!(deps?.repo && deps.runs) && !env.PLATFORM_DB) return unavailable(requestId);
   if (!(await allowed(ctx, action))) return notFound(requestId);
-  if (deps?.repo) return fn(deps.repo);
+  if (deps?.repo && deps.runs) return fn(deps.repo, deps.runs);
   const executor = createSqlExecutor(env.PLATFORM_DB!);
   try {
-    return await fn(createQaRepository(executor));
+    return await fn(createQaRepository(executor), createQaRunsRepository(executor));
   } catch {
     return unavailable(requestId);
   } finally {
@@ -144,7 +147,7 @@ async function withRepo(ctx: Ctx, action: string, fn: (repo: QaRepository) => Pr
   }
 }
 
-async function readJson(request: Request): Promise<Record<string, unknown> | null> {
+export async function readJson(request: Request): Promise<Record<string, unknown> | null> {
   try {
     const body: unknown = await request.json();
     return body && typeof body === "object" && !Array.isArray(body) ? (body as Record<string, unknown>) : null;
@@ -153,10 +156,10 @@ async function readJson(request: Request): Promise<Record<string, unknown> | nul
   }
 }
 
-const now = (ctx: Ctx) => (ctx.deps?.now ?? (() => new Date()))();
-const nextId = (ctx: Ctx) => (ctx.deps?.newId ?? newUuid)();
+export const now = (ctx: Ctx) => (ctx.deps?.now ?? (() => new Date()))();
+export const nextId = (ctx: Ctx) => (ctx.deps?.newId ?? newUuid)();
 
-function str(fields: Fields, body: Record<string, unknown>, key: string, opts: { required?: boolean; max: number }): string | undefined {
+export function str(fields: Fields, body: Record<string, unknown>, key: string, opts: { required?: boolean; max: number }): string | undefined {
   const v = body[key];
   if (v === undefined || v === null) {
     if (opts.required) (fields[key] ??= []).push("Required");
@@ -206,6 +209,26 @@ function slugify(name: string): string {
 }
 
 const SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+
+/**
+ * Each feature's health, from the newest result of each approved scenario.
+ * A failed read degrades to "not tested" rather than failing the whole page.
+ */
+export async function healthByFeature(runs: QaRunsRepository, orgId: string, hubId: string): Promise<Map<string, FeatureHealth>> {
+  const out = new Map<string, FeatureHealth>();
+  const [scenarios, latest] = await Promise.all([runs.listScenarios(orgId, hubId, { states: ["approved"] }), runs.latestResults(orgId, hubId)]);
+  if (!scenarios.ok || !latest.ok) return out;
+  const approved = new Set(scenarios.value.map((s) => s.id));
+  const verdicts = new Map<string, Verdict[]>();
+  for (const r of latest.value) {
+    if (!approved.has(r.scenarioId)) continue;
+    const list = verdicts.get(r.featureId) ?? [];
+    list.push(r.verdict);
+    verdicts.set(r.featureId, list);
+  }
+  for (const [featureId, v] of verdicts) out.set(featureId, deriveHealth(v));
+  return out;
+}
 
 // ── hubs ─────────────────────────────────────────────────────────────────────
 
@@ -331,11 +354,11 @@ function parseFeatureBody(body: Record<string, unknown>, creating: boolean): { o
 }
 
 export function listFeatures(ctx: Ctx, hubId: string): Promise<Response> {
-  return withRepo(ctx, "qa.feature.read", async (repo) => {
+  return withRepo(ctx, "qa.feature.read", async (repo, runs) => {
     const hub = await repo.getHub(ctx.orgId, hubId);
     if (!hub.ok) return fromRepoError(hub.error, ctx.requestId);
-    const r = await repo.listFeatures(ctx.orgId, hubId);
-    return r.ok ? successResponse({ features: r.value.map(publicFeature) }, ctx.requestId) : fromRepoError(r.error, ctx.requestId);
+    const [r, health] = await Promise.all([repo.listFeatures(ctx.orgId, hubId), healthByFeature(runs, ctx.orgId, hubId)]);
+    return r.ok ? successResponse({ features: r.value.map((f) => publicFeature(f, health.get(f.id))) }, ctx.requestId) : fromRepoError(r.error, ctx.requestId);
   });
 }
 
@@ -368,16 +391,17 @@ export async function createFeature(ctx: Ctx, hubId: string, request: Request): 
 }
 
 export function getFeature(ctx: Ctx, hubId: string, featureId: string): Promise<Response> {
-  return withRepo(ctx, "qa.feature.read", async (repo) => {
-    const [feature, edges, active] = await Promise.all([
+  return withRepo(ctx, "qa.feature.read", async (repo, runs) => {
+    const [feature, edges, active, health] = await Promise.all([
       repo.getFeature(ctx.orgId, hubId, featureId),
       repo.listEdges(ctx.orgId, hubId),
       repo.listFeatures(ctx.orgId, hubId),
+      healthByFeature(runs, ctx.orgId, hubId),
     ]);
     if (!feature.ok) return fromRepoError(feature.error, ctx.requestId);
     if (!edges.ok) return fromRepoError(edges.error, ctx.requestId);
     if (!active.ok) return fromRepoError(active.error, ctx.requestId);
-    const pub = publicFeature(feature.value);
+    const pub = publicFeature(feature.value, health.get(feature.value.id));
     // Same rule as the map: an archived feature, and its edges, are off the map.
     const live = new Set(active.value.map((f) => f.id));
     const ripple = computeRipple(pub.id, edges.value.filter((e) => live.has(e.fromFeatureId) && live.has(e.toFeatureId)).map(publicEdge));
@@ -391,22 +415,25 @@ export async function updateFeature(ctx: Ctx, hubId: string, featureId: string, 
   const parsed = parseFeatureBody(body, false);
   if (!parsed.ok) return validationError(ctx.requestId, parsed.fields);
 
-  return withRepo(ctx, "qa.feature.write", async (repo) => {
+  return withRepo(ctx, "qa.feature.write", async (repo, runs) => {
     const r = await repo.updateFeature(ctx.orgId, hubId, featureId, { ...parsed.value, updatedAt: now(ctx) });
-    return r.ok ? successResponse({ feature: publicFeature(r.value) }, ctx.requestId) : fromRepoError(r.error, ctx.requestId);
+    if (!r.ok) return fromRepoError(r.error, ctx.requestId);
+    const health = await healthByFeature(runs, ctx.orgId, hubId);
+    return successResponse({ feature: publicFeature(r.value, health.get(r.value.id)) }, ctx.requestId);
   });
 }
 
 // ── the map and its edges ────────────────────────────────────────────────────
 
 export function getMap(ctx: Ctx, hubId: string): Promise<Response> {
-  return withRepo(ctx, "qa.feature.read", async (repo) => {
+  return withRepo(ctx, "qa.feature.read", async (repo, runs) => {
     const hub = await repo.getHub(ctx.orgId, hubId);
     if (!hub.ok) return fromRepoError(hub.error, ctx.requestId);
-    const [areas, features, edges] = await Promise.all([
+    const [areas, features, edges, health] = await Promise.all([
       repo.listAreas(ctx.orgId, hubId),
       repo.listFeatures(ctx.orgId, hubId),
       repo.listEdges(ctx.orgId, hubId),
+      healthByFeature(runs, ctx.orgId, hubId),
     ]);
     if (!areas.ok) return fromRepoError(areas.error, ctx.requestId);
     if (!features.ok) return fromRepoError(features.error, ctx.requestId);
@@ -416,7 +443,7 @@ export function getMap(ctx: Ctx, hubId: string): Promise<Response> {
       {
         hub: publicHub(hub.value),
         areas: areas.value.map(publicArea),
-        features: features.value.map(publicFeature),
+        features: features.value.map((f) => publicFeature(f, health.get(f.id))),
         // An archived feature leaves the map, and so do its edges.
         edges: edges.value.filter((e) => live.has(e.fromFeatureId) && live.has(e.toFeatureId)).map(publicEdge),
       },

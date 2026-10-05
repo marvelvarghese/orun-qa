@@ -62,6 +62,8 @@ const ORG_ROLE_PERMISSIONS: Record<OrganizationRole, readonly string[]> = {
     "qa.feature.read",
     "qa.feature.write",
     "qa.map.write",
+    "qa.scenario.write",
+    "qa.run.write",
   ],
   admin: [
     "organization.read",
@@ -108,6 +110,8 @@ const ORG_ROLE_PERMISSIONS: Record<OrganizationRole, readonly string[]> = {
     "qa.feature.read",
     "qa.feature.write",
     "qa.map.write",
+    "qa.scenario.write",
+    "qa.run.write",
   ],
   builder: [
     "organization.read",
@@ -127,6 +131,8 @@ const ORG_ROLE_PERMISSIONS: Record<OrganizationRole, readonly string[]> = {
     "qa.hub.read",
     "qa.feature.read",
     "qa.map.write",
+    "qa.scenario.write",
+    "qa.run.write",
   ],
   viewer: [
     "organization.read",
@@ -267,6 +273,8 @@ const ALL_KNOWN_ACTIONS: ReadonlySet<string> = new Set([
   "qa.feature.read",
   "qa.feature.write",
   "qa.map.write",
+  "qa.scenario.write",
+  "qa.run.write",
 ]);
 
 function isOrgRole(role: string): role is OrganizationRole {

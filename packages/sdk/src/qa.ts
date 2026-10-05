@@ -12,12 +12,20 @@ import type {
   PublicFeatureEdge,
   PublicHub,
   UpdateFeatureRequest,
+  CreateScenarioRequest,
+  UpdateScenarioRequest,
+  PublicScenario,
+  CreateRunRequest,
+  PublicRun,
+  PostResultRequest,
+  PublicResult,
+  PublicRecording,
 } from "@saas/contracts/qa";
 
 import type { Transport, RequestOptions } from "./transport.js";
 
 /**
- * Orun QA resource client (QA1 — the feature map).
+ * Orun QA resource client (QA1 — the feature map; QA2 — scenarios, runs and recordings).
  *
  * Org-scoped: every method takes `orgId` (org_…) and, below the hub list, a `hubId` (hub_…).
  * Maps to `apps/qa-worker` via the api-edge `qa-facade` route.
@@ -108,5 +116,62 @@ export class QaClient {
       { method: "DELETE", path: `${this.base(orgId, hubId)}/edges/${encodeURIComponent(edgeId)}` },
       opts,
     );
+  }
+
+  // ── QA2: scenarios ──
+
+  listScenarios(orgId: string, hubId: string, query: { feature?: string } = {}, opts: RequestOptions = {}): Promise<{ scenarios: PublicScenario[] }> {
+    const qs = query.feature ? `?feature=${encodeURIComponent(query.feature)}` : "";
+    return this.transport.request({ method: "GET", path: `${this.base(orgId, hubId)}/scenarios${qs}` }, opts);
+  }
+
+  getScenario(orgId: string, hubId: string, scenarioId: string, opts: RequestOptions = {}): Promise<{ scenario: PublicScenario; history: PublicResult[] }> {
+    return this.transport.request({ method: "GET", path: `${this.base(orgId, hubId)}/scenarios/${encodeURIComponent(scenarioId)}` }, opts);
+  }
+
+  createScenario(orgId: string, hubId: string, body: CreateScenarioRequest, opts: RequestOptions = {}): Promise<{ scenario: PublicScenario }> {
+    return this.transport.request({ method: "POST", path: `${this.base(orgId, hubId)}/scenarios`, body }, opts);
+  }
+
+  updateScenario(orgId: string, hubId: string, scenarioId: string, body: UpdateScenarioRequest, opts: RequestOptions = {}): Promise<{ scenario: PublicScenario }> {
+    return this.transport.request({ method: "PATCH", path: `${this.base(orgId, hubId)}/scenarios/${encodeURIComponent(scenarioId)}`, body }, opts);
+  }
+
+  /** The PM's sign-off: only approved scenarios count toward a feature's health. */
+  approveScenario(orgId: string, hubId: string, scenarioId: string, opts: RequestOptions = {}): Promise<{ scenario: PublicScenario }> {
+    return this.transport.request({ method: "POST", path: `${this.base(orgId, hubId)}/scenarios/${encodeURIComponent(scenarioId)}/approve` }, opts);
+  }
+
+  // ── QA2: runs, results and recordings ──
+
+  listRuns(orgId: string, hubId: string, query: { limit?: number } = {}, opts: RequestOptions = {}): Promise<{ runs: PublicRun[] }> {
+    const qs = query.limit ? `?limit=${query.limit}` : "";
+    return this.transport.request({ method: "GET", path: `${this.base(orgId, hubId)}/runs${qs}` }, opts);
+  }
+
+  getRun(orgId: string, hubId: string, runId: string, opts: RequestOptions = {}): Promise<{ run: PublicRun; results: PublicResult[] }> {
+    return this.transport.request({ method: "GET", path: `${this.base(orgId, hubId)}/runs/${encodeURIComponent(runId)}` }, opts);
+  }
+
+  createRun(orgId: string, hubId: string, body: CreateRunRequest, opts: RequestOptions = {}): Promise<{ run: PublicRun }> {
+    return this.transport.request({ method: "POST", path: `${this.base(orgId, hubId)}/runs`, body }, opts);
+  }
+
+  postResult(
+    orgId: string,
+    hubId: string,
+    runId: string,
+    body: PostResultRequest,
+    opts: RequestOptions = {},
+  ): Promise<{ result: PublicResult; recordingStored: boolean | null }> {
+    return this.transport.request({ method: "POST", path: `${this.base(orgId, hubId)}/runs/${encodeURIComponent(runId)}/results`, body }, opts);
+  }
+
+  finishRun(orgId: string, hubId: string, runId: string, body: { errored?: boolean } = {}, opts: RequestOptions = {}): Promise<{ run: PublicRun; results: PublicResult[] }> {
+    return this.transport.request({ method: "POST", path: `${this.base(orgId, hubId)}/runs/${encodeURIComponent(runId)}/finish`, body }, opts);
+  }
+
+  getRecording(orgId: string, hubId: string, recordingId: string, opts: RequestOptions = {}): Promise<{ recording: PublicRecording }> {
+    return this.transport.request({ method: "GET", path: `${this.base(orgId, hubId)}/recordings/${encodeURIComponent(recordingId)}` }, opts);
   }
 }

@@ -1,11 +1,12 @@
 import type { Env } from "./env.js";
 import type { Ctx, Deps } from "./handlers.js";
 import * as h from "./handlers.js";
+import * as rh from "./runs-handlers.js";
 import { errorResponse, methodNotAllowed, notFound, successResponse } from "./http.js";
 import { fromPublic, generateRequestId, parseOrgPublicId } from "./ids.js";
 
 const REQUEST_ID_RE = /^[\w-]{1,128}$/;
-const BASE = /^\/v1\/organizations\/([^/]+)\/qa\/hubs(?:\/([^/]+)(?:\/(areas|features|map|edges|import)(?:\/([^/]+)(?:\/(confirm))?)?)?)?$/;
+const BASE = /^\/v1\/organizations\/([^/]+)\/qa\/hubs(?:\/([^/]+)(?:\/(areas|features|map|edges|import|scenarios|runs|recordings)(?:\/([^/]+)(?:\/(confirm|approve|finish|results))?)?)?)?$/;
 
 export function isQaPath(pathname: string): boolean {
   return BASE.test(pathname);
@@ -97,7 +98,44 @@ export async function route(request: Request, env: Env, deps?: Deps): Promise<Re
         const edgeId = fromPublic("edge", itemPub);
         if (!edgeId) return errorResponse("not_found", "Not found", 404, requestId);
         if (verb === "confirm") return method === "POST" ? h.confirmEdge(ctx, hubId, edgeId) : methodNotAllowed(requestId);
+        if (verb) return notFound(requestId, url.pathname);
         return method === "DELETE" ? h.deleteEdge(ctx, hubId, edgeId) : methodNotAllowed(requestId);
+      }
+
+      case "scenarios": {
+        if (!itemPub) {
+          if (method === "GET") return rh.listScenarios(ctx, hubId, url);
+          if (method === "POST") return rh.createScenario(ctx, hubId, request);
+          return methodNotAllowed(requestId);
+        }
+        const scenarioId = fromPublic("scn", itemPub);
+        if (!scenarioId) return errorResponse("not_found", "Not found", 404, requestId);
+        if (verb === "approve") return method === "POST" ? rh.approveScenario(ctx, hubId, scenarioId) : methodNotAllowed(requestId);
+        if (verb) return notFound(requestId, url.pathname);
+        if (method === "GET") return rh.getScenario(ctx, hubId, scenarioId);
+        if (method === "PATCH") return rh.updateScenario(ctx, hubId, scenarioId, request);
+        return methodNotAllowed(requestId);
+      }
+
+      case "runs": {
+        if (!itemPub) {
+          if (method === "GET") return rh.listRuns(ctx, hubId, url);
+          if (method === "POST") return rh.createRun(ctx, hubId, request);
+          return methodNotAllowed(requestId);
+        }
+        const runId = fromPublic("run", itemPub);
+        if (!runId) return errorResponse("not_found", "Not found", 404, requestId);
+        if (verb === "finish") return method === "POST" ? rh.finishRun(ctx, hubId, runId, request) : methodNotAllowed(requestId);
+        if (verb === "results") return method === "POST" ? rh.postResult(ctx, hubId, runId, request) : methodNotAllowed(requestId);
+        if (verb) return notFound(requestId, url.pathname);
+        return method === "GET" ? rh.getRun(ctx, hubId, runId) : methodNotAllowed(requestId);
+      }
+
+      case "recordings": {
+        if (!itemPub || verb) return notFound(requestId, url.pathname);
+        const recordingId = fromPublic("rec", itemPub);
+        if (!recordingId) return errorResponse("not_found", "Not found", 404, requestId);
+        return method === "GET" ? rh.getRecording(ctx, hubId, recordingId) : methodNotAllowed(requestId);
       }
 
       default:

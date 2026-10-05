@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- response bodies are asserted field by field */
-/* eslint-disable @typescript-eslint/no-explicit-any -- response bodies are asserted field by field */
 import { PGlite } from "@electric-sql/pglite";
 import { readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
@@ -7,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { route } from "@qa-worker/router";
 import type { Env } from "@qa-worker/env";
 import { authorize } from "@saas/policy-engine";
-import { createQaRepository, type QaRepository } from "@saas/db/qa";
+import { createQaRepository, createQaRunsRepository, type QaRepository, type QaRunsRepository } from "@saas/db/qa";
 import { ORUN_QA_SELF } from "@saas/contracts/qa-self";
 import type { AuthorizationRequest, MembershipFact, TenancyRole } from "@saas/contracts/policy";
 
@@ -17,7 +16,7 @@ import type { AuthorizationRequest, MembershipFact, TenancyRole } from "@saas/co
 // membership and policy workers do.
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const QA_SQL = ["200_qa_feature_map", "210_qa_feature_name_active"]
+const QA_SQL = ["200_qa_feature_map", "210_qa_feature_name_active", "220_qa_scenarios_runs"]
   .map((m) => readFileSync(resolve(__dirname, "../../..", `packages/db/src/migrations/${m}/up.sql`), "utf8"))
   .join("\n");
 
@@ -25,15 +24,16 @@ const ORG_UUID = "11111111-1111-1111-1111-111111111111";
 const ORG = "org_11111111111111111111111111111111";
 const OTHER_ORG = "org_99999999999999999999999999999999";
 
-async function pgRepo(): Promise<QaRepository> {
+async function pgRepos(): Promise<{ repo: QaRepository; runs: QaRunsRepository }> {
   const db = new PGlite();
   await db.exec(QA_SQL);
-  return createQaRepository({
+  const executor = {
     async execute(text: string, params?: unknown[]) {
       const r = await db.query<Record<string, unknown>>(text, (params ?? []) as never[]);
       return { rows: r.rows as never[], rowCount: r.rows.length };
     },
-  });
+  };
+  return { repo: createQaRepository(executor as never), runs: createQaRunsRepository(executor as never) };
 }
 
 function fetcher(handle: (body: unknown) => unknown): Fetcher {
@@ -47,7 +47,7 @@ function fetcher(handle: (body: unknown) => unknown): Fetcher {
 
 /** One Postgres database per test; `role` is the caller's role in ORG (null = not a member). */
 async function harness() {
-  const repo = await pgRepo();
+  const repos = await pgRepos();
   const state: { role: TenancyRole | null } = { role: "owner" };
   const env: Env = {
     ENVIRONMENT: "test",
@@ -68,7 +68,7 @@ async function harness() {
         ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
       }),
       env,
-      { repo },
+      repos,
     );
     const json = (await res.json()) as { data?: Record<string, any>; error?: { code: string; details?: any } };
     return { status: res.status, ...json };
@@ -77,8 +77,8 @@ async function harness() {
   return { state, env, call };
 }
 
-async function hubWithFeatures(t: Awaited<ReturnType<typeof harness>>, names: string[]) {
-  const hub = await t.call("POST", `/v1/organizations/${ORG}/qa/hubs`, { name: "Orun QA", stageUrl: "https://stage.orunqa.app" });
+async function hubWithFeatures(t: Awaited<ReturnType<typeof harness>>, names: string[], hubName = "Orun QA") {
+  const hub = await t.call("POST", `/v1/organizations/${ORG}/qa/hubs`, { name: hubName, stageUrl: "https://stage.orunqa.app" });
   expect(hub.status).toBe(201);
   const hubId = hub.data!.hub.id as string;
   const ids: Record<string, string> = {};
@@ -350,5 +350,167 @@ describe("qa-worker", () => {
     expect((await t.call("POST", `/v1/organizations/${ORG}/qa/hubs/${hubId}/map`)).status).toBe(405);
     expect((await t.call("GET", `/v1/organizations/${ORG}/qa/hubs/not-a-hub`)).status).toBe(404);
     expect((await t.call("GET", `/v1/organizations/${ORG}/qa/elsewhere`)).status).toBe(404);
+  });
+
+  // ── QA2: scenarios, runs, results, recordings, and health from results ──
+
+  const goodSteps = [
+    { text: "Open the features page", action: { type: "goto", path: "/features" } },
+    { text: "The map shows", action: { type: "expect_text", text: "Feature map" } },
+  ];
+
+  async function approvedScenario(t: Awaited<ReturnType<typeof harness>>, hubId: string, featureId: string, name = "Opens the map") {
+    const base = `/v1/organizations/${ORG}/qa/hubs/${hubId}/scenarios`;
+    const s = await t.call("POST", base, { featureId, name, steps: goodSteps });
+    expect(s.status).toBe(201);
+    const id = s.data!.scenario.id as string;
+    expect((await t.call("POST", `${base}/${id}/approve`)).status).toBe(200);
+    return id;
+  }
+
+  it("writes a scenario as a draft, and only the PM approves it", async () => {
+    const t = await harness();
+    const { hubId, ids } = await hubWithFeatures(t, ["Map"]);
+    const base = `/v1/organizations/${ORG}/qa/hubs/${hubId}/scenarios`;
+    t.state.role = "builder";
+    const s = await t.call("POST", base, { featureId: ids.Map, name: "Opens the map", expected: "The map draws", steps: goodSteps });
+    expect(s.status).toBe(201);
+    expect(s.data!.scenario.id).toMatch(/^scn_[0-9a-f]{32}$/);
+    expect(s.data!.scenario.state).toBe("draft");
+    expect(s.data!.scenario.steps.map((x: any) => x.ord)).toEqual([0, 1]);
+    const id = s.data!.scenario.id;
+    expect((await t.call("POST", `${base}/${id}/approve`)).status).toBe(404);
+    t.state.role = "viewer";
+    expect((await t.call("POST", base, { featureId: ids.Map, name: "Other", steps: goodSteps })).status).toBe(404);
+    const listed = await t.call("GET", `${base}?feature=${ids.Map}`);
+    expect(listed.data!.scenarios).toHaveLength(1);
+    t.state.role = "owner";
+    const ok = await t.call("POST", `${base}/${id}/approve`);
+    expect(ok.data!.scenario.state).toBe("approved");
+    // Changing its steps sends it back for approval.
+    const edited = await t.call("PATCH", `${base}/${id}`, { steps: [goodSteps[0]] });
+    expect(edited.data!.scenario.state).toBe("draft");
+    expect(edited.data!.scenario.steps).toHaveLength(1);
+    // A rename alone does not.
+    await t.call("POST", `${base}/${id}/approve`);
+    const renamed = await t.call("PATCH", `${base}/${id}`, { name: "Opens the feature map" });
+    expect(renamed.data!.scenario.state).toBe("approved");
+  });
+
+  it("validates scenario steps and refuses a feature from elsewhere", async () => {
+    const t = await harness();
+    const { hubId, ids } = await hubWithFeatures(t, ["Map"]);
+    const base = `/v1/organizations/${ORG}/qa/hubs/${hubId}/scenarios`;
+    const bad = await t.call("POST", base, {
+      featureId: ids.Map,
+      name: "Bad",
+      steps: [
+        { text: "", action: { type: "goto", path: "https://evil.example" } },
+        { text: "Click", action: { type: "click" } },
+        { text: "Eval", action: { type: "evaluate", code: "1" } },
+      ],
+    });
+    expect(bad.status).toBe(422);
+    expect(Object.keys(bad.error!.details.fields).sort()).toEqual(["steps.0", "steps.1", "steps.2"]);
+    const other = await hubWithFeatures(t, ["Elsewhere"], "Other hub");
+    const cross = await t.call("POST", base, { featureId: other.ids.Elsewhere, name: "Cross", steps: goodSteps });
+    expect(cross.status).toBe(422);
+    const dupe = await t.call("POST", base, { featureId: ids.Map, name: "Same", steps: goodSteps });
+    expect(dupe.status).toBe(201);
+    expect((await t.call("POST", base, { featureId: ids.Map, name: "same", steps: goodSteps })).status).toBe(409);
+  });
+
+  it("records a run: results, a recording, the run's status and the feature's health", async () => {
+    const t = await harness();
+    const { hubId, ids } = await hubWithFeatures(t, ["Map", "Import"]);
+    const hub = `/v1/organizations/${ORG}/qa/hubs/${hubId}`;
+    const mapScn = await approvedScenario(t, hubId, ids.Map!);
+    const importScn = await approvedScenario(t, hubId, ids.Import!, "Imports a manifest");
+    // A draft never counts toward health.
+    const draft = await t.call("POST", `${hub}/scenarios`, { featureId: ids.Map, name: "Draft one", steps: goodSteps });
+
+    let map = await t.call("GET", `${hub}/map`);
+    expect(map.data!.features.map((f: any) => f.health)).toEqual(["not_tested", "not_tested"]);
+
+    t.state.role = "builder"; // the runner signs in as a builder
+    const run = await t.call("POST", `${hub}/runs`, { trigger: "deploy", ref: "abc123" });
+    expect(run.status).toBe(201);
+    expect(run.data!.run.status).toBe("running");
+    const runId = run.data!.run.id;
+    const events = Buffer.from("not really gzip but base64").toString("base64");
+    const works = await t.call("POST", `${hub}/runs/${runId}/results`, {
+      scenarioId: mapScn,
+      verdict: "works",
+      durationMs: 1200,
+      stepTimings: [{ ord: 0, startMs: 0, endMs: 600, ok: true }, { ord: 1, startMs: 600, endMs: 1200, ok: true }],
+      apiCalls: [{ method: "GET", path: "/v1/organizations/x/qa/hubs/y/map", status: 200, ms: 40 }],
+      recording: { encoding: "rrweb+gzip+base64", events },
+    });
+    expect(works.status).toBe(201);
+    expect(works.data!.recordingStored).toBe(true);
+    expect(works.data!.result.recordingId).toMatch(/^rec_/);
+    const fails = await t.call("POST", `${hub}/runs/${runId}/results`, { scenarioId: importScn, verdict: "fails", failingStep: 1, message: "No text", durationMs: 900 });
+    expect(fails.status).toBe(201);
+    expect(fails.data!.recordingStored).toBeNull();
+    expect((await t.call("POST", `${hub}/runs/${runId}/results`, { scenarioId: mapScn, verdict: "works", durationMs: 1 })).status).toBe(409);
+    expect((await t.call("POST", `${hub}/runs/${runId}/results`, { scenarioId: draft.data!.scenario.id, verdict: "works", durationMs: 1 })).status).toBe(201);
+    expect((await t.call("POST", `${hub}/runs/${runId}/results`, { scenarioId: mapScn, verdict: "works", durationMs: 1, recording: { encoding: "rrweb+gzip+base64", events: "not base64!" } })).status).toBe(422);
+
+    const finished = await t.call("POST", `${hub}/runs/${runId}/finish`, {});
+    expect(finished.data!.run.status).toBe("failed");
+    expect(finished.data!.run.finishedAt).not.toBeNull();
+    expect((await t.call("POST", `${hub}/runs/${runId}/finish`, {})).status).toBe(409);
+    expect((await t.call("POST", `${hub}/runs/${runId}/results`, { scenarioId: importScn, verdict: "works", durationMs: 1 })).status).toBe(409);
+
+    t.state.role = "viewer";
+    map = await t.call("GET", `${hub}/map`);
+    const health = Object.fromEntries(map.data!.features.map((f: any) => [f.name, f.health]));
+    expect(health).toEqual({ Map: "verified", Import: "broken" });
+    const one = await t.call("GET", `${hub}/features/${ids.Import}`);
+    expect(one.data!.feature.health).toBe("broken");
+
+    const rec = await t.call("GET", `${hub}/recordings/${works.data!.result.recordingId}`);
+    expect(rec.status).toBe(200);
+    expect(rec.data!.recording.events).toBe(events);
+    t.state.role = "owner";
+    const h2 = await hubWithFeatures(t, [], "Other hub");
+    expect((await t.call("GET", `/v1/organizations/${ORG}/qa/hubs/${h2.hubId}/recordings/${works.data!.result.recordingId}`)).status).toBe(404);
+
+    const runs = await t.call("GET", `${hub}/runs`);
+    expect(runs.data!.runs).toHaveLength(1);
+    const got = await t.call("GET", `${hub}/runs/${runId}`);
+    expect(got.data!.results).toHaveLength(3);
+    const scn = await t.call("GET", `${hub}/scenarios/${importScn}`);
+    expect(scn.data!.scenario.last.verdict).toBe("fails");
+    expect(scn.data!.history).toHaveLength(1);
+
+    // A newer passing run makes the feature verified again; quarantine takes a scenario out of the gate.
+    const run2 = await t.call("POST", `${hub}/runs`, { trigger: "schedule" });
+    await t.call("POST", `${hub}/runs/${run2.data!.run.id}/results`, { scenarioId: importScn, verdict: "works", durationMs: 5 });
+    await t.call("POST", `${hub}/runs/${run2.data!.run.id}/finish`, {});
+    map = await t.call("GET", `${hub}/map`);
+    expect(map.data!.features.map((f: any) => f.health)).toEqual(["verified", "verified"]);
+    t.state.role = "builder";
+    expect((await t.call("PATCH", `${hub}/scenarios/${mapScn}`, { state: "quarantined" })).status).toBe(404);
+    t.state.role = "owner";
+    expect((await t.call("PATCH", `${hub}/scenarios/${mapScn}`, { state: "quarantined" })).data!.scenario.state).toBe("quarantined");
+    map = await t.call("GET", `${hub}/map`);
+    expect(Object.fromEntries(map.data!.features.map((f: any) => [f.name, f.health]))).toEqual({ Map: "not_tested", Import: "verified" });
+  });
+
+  it("keeps runs to members who may run them", async () => {
+    const t = await harness();
+    const { hubId } = await hubWithFeatures(t, []);
+    const hub = `/v1/organizations/${ORG}/qa/hubs/${hubId}`;
+    t.state.role = "viewer";
+    expect((await t.call("POST", `${hub}/runs`, { trigger: "manual" })).status).toBe(404);
+    t.state.role = null;
+    expect((await t.call("GET", `${hub}/runs`)).status).toBe(404);
+    t.state.role = "owner";
+    expect((await t.call("POST", `${hub}/runs`, {})).status).toBe(422);
+    expect((await t.call("GET", `${hub}/runs?limit=500`)).status).toBe(422);
+    expect((await t.call("GET", `${hub}/runs/run_00000000000000000000000000000000`)).status).toBe(404);
+    expect((await t.call("GET", `${hub}/runs/not-a-run`)).status).toBe(404);
+    expect((await t.call("POST", `${hub}/runs/run_00000000000000000000000000000000/rerun`)).status).toBe(404);
   });
 });

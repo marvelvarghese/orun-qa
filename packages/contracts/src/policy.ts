@@ -125,6 +125,8 @@ export const ORGANIZATION_ACTIONS = [
   "qa.feature.read",
   "qa.feature.write",
   "qa.map.write",
+  "qa.scenario.write",
+  "qa.run.write",
 ] as const;
 
 export type OrganizationAction = (typeof ORGANIZATION_ACTIONS)[number];

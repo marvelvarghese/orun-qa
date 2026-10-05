@@ -16,9 +16,11 @@ export function parseOrgPublicId(publicId: string): Uuid | null {
   return uuidFromPublicId(publicId, "org");
 }
 
-export const toPublic = (prefix: "org" | "hub" | "area" | "feat" | "edge", uuid: string): string => `${prefix}_${uuidToHex(uuid)}`;
+export type PublicPrefix = "hub" | "area" | "feat" | "edge" | "scn" | "run" | "res" | "rec";
 
-export function fromPublic(prefix: "hub" | "area" | "feat" | "edge", publicId: string | null | undefined): string | null {
+export const toPublic = (prefix: "org" | PublicPrefix, uuid: string): string => `${prefix}_${uuidToHex(uuid)}`;
+
+export function fromPublic(prefix: PublicPrefix, publicId: string | null | undefined): string | null {
   if (!publicId || !publicId.startsWith(`${prefix}_`)) return null;
   return hexToUuid(publicId.slice(prefix.length + 1));
 }

@@ -201,5 +201,14 @@ export const manifest: MigrationManifest = {
       description:
         "Orun QA — feature names unique among a hub's active features only (QA1 review)",
     },
+    {
+      id: "220_qa_scenarios_runs",
+      context: "qa",
+      path: "220_qa_scenarios_runs/up.sql",
+      checksum:
+        "c84c6377a133ea15575a009261759407c7d8d514640e99cece8d9e22f7cfffe7",
+      description:
+        "Orun QA scenarios and runs (QA2) — scenarios with steps, runs, results and rrweb recordings",
+    },
   ],
 };
