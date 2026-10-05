@@ -1,0 +1,13 @@
+apiVersion: orun.io/v1
+kind: TaskContract
+metadata:
+  name: QA-14
+spec:
+  goal: Stage and prod run a policy worker that knows every qa.* action, so Orun QA's routes authorize instead of denying every caller; its health says how many actions it knows, so a stale deployment shows.
+  affects:
+    - default/orun-qa/policy-worker
+    - default/orun-qa/policy-worker-tests
+  doneWhen:
+    - after the merge, policy-worker deploys to stage and prod
+    - the runner lists and creates hubs on stage instead of getting 404
+  gates: []
