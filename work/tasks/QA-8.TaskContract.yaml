@@ -1,0 +1,12 @@
+apiVersion: orun.io/v1
+kind: TaskContract
+metadata:
+  name: QA-8
+spec:
+  goal: The pipeline runs orun v2.72.0, whose plan on the default branch syncs the declared work tree into Orunbase, so every merge keeps the epic, its milestones and tasks current without a hand-run sync.
+  affects:
+    - .github/workflows/ci.yml
+  doneWhen:
+    - the PR's verify lanes pass on orun v2.72.0
+    - after the merge, the epic in Orunbase carries managedBy for this repository and the declared tasks
+  gates: []
