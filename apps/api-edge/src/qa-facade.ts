@@ -5,7 +5,7 @@ import { resolveActor } from "./resolve-actor.js";
 import { createTimings } from "@saas/contracts/timing";
 
 // Orun QA: /v1/organizations/{org}/qa/hubs[/{hub}[/{collection}[/{id}[/{verb}]]]]
-const QA_RE = /^\/v1\/organizations\/[^/]+\/qa\/hubs(?:\/[^/]+(?:\/(?:areas|features|map|edges|import|scenarios|runs|recordings)(?:\/[^/]+(?:\/(?:confirm|approve|finish|results))?)?)?)?$/;
+const QA_RE = /^\/v1\/organizations\/[^/]+\/qa\/hubs(?:\/[^/]+(?:\/(?:areas|features|map|edges|import|scenarios|runs|recordings|tries)(?:\/[^/]+(?:\/(?:confirm|approve|finish|results|result|save|recording))?)?)?)?$/;
 const ALLOWED_METHODS = new Set(["GET", "POST", "PATCH", "DELETE"]);
 const WITH_BODY = new Set(["POST", "PATCH"]);
 const FORWARDED_HEADERS = ["content-type", "traceparent", "idempotency-key"];

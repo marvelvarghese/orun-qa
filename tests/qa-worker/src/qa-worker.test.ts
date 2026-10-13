@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { route } from "@qa-worker/router";
 import type { Env } from "@qa-worker/env";
 import { authorize } from "@saas/policy-engine";
-import { createQaRepository, createQaRunsRepository, type QaRepository, type QaRunsRepository } from "@saas/db/qa";
+import { createQaRepository, createQaRunsRepository, createQaTriesRepository, type QaRepository, type QaRunsRepository, type QaTriesRepository } from "@saas/db/qa";
 import { ORUN_QA_SELF } from "@saas/contracts/qa-self";
 import type { AuthorizationRequest, MembershipFact, TenancyRole } from "@saas/contracts/policy";
 
@@ -16,7 +16,7 @@ import type { AuthorizationRequest, MembershipFact, TenancyRole } from "@saas/co
 // membership and policy workers do.
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const QA_SQL = ["200_qa_feature_map", "210_qa_feature_name_active", "220_qa_scenarios_runs"]
+const QA_SQL = ["200_qa_feature_map", "210_qa_feature_name_active", "220_qa_scenarios_runs", "230_qa_tries"]
   .map((m) => readFileSync(resolve(__dirname, "../../..", `packages/db/src/migrations/${m}/up.sql`), "utf8"))
   .join("\n");
 
@@ -24,7 +24,7 @@ const ORG_UUID = "11111111-1111-1111-1111-111111111111";
 const ORG = "org_11111111111111111111111111111111";
 const OTHER_ORG = "org_99999999999999999999999999999999";
 
-async function pgRepos(): Promise<{ repo: QaRepository; runs: QaRunsRepository }> {
+async function pgRepos(): Promise<{ repo: QaRepository; runs: QaRunsRepository; tries: QaTriesRepository }> {
   const db = new PGlite();
   await db.exec(QA_SQL);
   // Bind like production: postgres.js with fetch_types off cannot serialize a JS
@@ -42,7 +42,7 @@ async function pgRepos(): Promise<{ repo: QaRepository; runs: QaRunsRepository }
     ...executorOn(db),
     transaction: <T>(fn: (ex: ReturnType<typeof executorOn>) => Promise<T>): Promise<T> => db.transaction((t) => fn(executorOn(t))),
   };
-  return { repo: createQaRepository(executor as never), runs: createQaRunsRepository(executor as never) };
+  return { repo: createQaRepository(executor as never), runs: createQaRunsRepository(executor as never), tries: createQaTriesRepository(executor as never) };
 }
 
 function fetcher(handle: (body: unknown) => unknown): Fetcher {
@@ -595,5 +595,98 @@ describe("qa-worker", () => {
     expect((await t.call("GET", `${hub}/runs/run_00000000000000000000000000000000`)).status).toBe(404);
     expect((await t.call("GET", `${hub}/runs/not-a-run`)).status).toBe(404);
     expect((await t.call("POST", `${hub}/runs/run_00000000000000000000000000000000/rerun`)).status).toBe(404);
+  });
+
+  // ── QA2: Try a scenario ──
+
+  it("tries a question once: queued, claimed by the runner, answered, and saved only on request", async () => {
+    const t = await harness();
+    const { hubId, ids } = await hubWithFeatures(t, ["Map"]);
+    const hub = `/v1/organizations/${ORG}/qa/hubs/${hubId}`;
+    t.state.role = "viewer";
+    expect((await t.call("POST", `${hub}/tries`, { question: "Does the map draw?" })).status).toBe(404);
+    t.state.role = "owner";
+    expect((await t.call("POST", `${hub}/tries`, {})).status).toBe(422);
+    const created = await t.call("POST", `${hub}/tries`, { question: "Does the map draw?", featureId: ids.Map });
+    expect(created.status).toBe(201);
+    expect(created.data!.dispatched).toBe(false); // no GitHub token in tests: it waits for the runner
+    const tryId = created.data!.try.id;
+    expect(tryId).toMatch(/^try_[0-9a-f]{32}$/);
+    expect(created.data!.try.status).toBe("queued");
+
+    // Nothing can be saved or answered before it runs.
+    expect((await t.call("POST", `${hub}/tries/${tryId}/save`, { featureId: ids.Map, name: "Map draws" })).status).toBe(409);
+    expect((await t.call("POST", `${hub}/tries/${tryId}/result`, { answer: "yes", headline: "Yes.", steps: goodSteps })).status).toBe(409);
+
+    // The runner (a builder) claims it; a second claim finds nothing.
+    t.state.role = "builder";
+    const claim = await t.call("POST", `${hub}/tries/claim`);
+    expect(claim.data!.try.id).toBe(tryId);
+    expect(claim.data!.try.status).toBe("running");
+    expect((await t.call("POST", `${hub}/tries/claim`)).data!.try).toBeNull();
+
+    const events = Buffer.from("rrweb").toString("base64");
+    const bad = await t.call("POST", `${hub}/tries/${tryId}/result`, { answer: "maybe", headline: "", steps: [] });
+    expect(bad.status).toBe(422);
+    const answered = await t.call("POST", `${hub}/tries/${tryId}/result`, {
+      answer: "yes",
+      headline: "Yes. The map draws every feature.",
+      explanation: "The Insights page read the map and drew it.",
+      steps: goodSteps,
+      stepTimings: [{ ord: 0, startMs: 0, endMs: 400, ok: true }],
+      apiCalls: [{ method: "GET", path: "/v1/organizations/x/qa/hubs/y/map", status: 200, ms: 30 }],
+      recording: { encoding: "rrweb+gzip+base64", events },
+    });
+    expect(answered.status).toBe(200);
+    expect(answered.data!.try.status).toBe("answered");
+    expect(answered.data!.try.hasRecording).toBe(true);
+    expect((await t.call("POST", `${hub}/tries/${tryId}/result`, { answer: "no", headline: "No.", steps: goodSteps })).status).toBe(409);
+
+    t.state.role = "owner";
+    const rec = await t.call("GET", `${hub}/tries/${tryId}/recording`);
+    expect(rec.data!.recording.events).toBe(events);
+    // Recent tries are the caller's own (the owner asked this one).
+    expect((await t.call("GET", `${hub}/tries`)).data!.tries.map((x: any) => x.id)).toEqual([tryId]);
+
+    // Saving makes a draft scenario with exactly the steps the AI took; a second save is refused.
+    const saved = await t.call("POST", `${hub}/tries/${tryId}/save`, { featureId: ids.Map, name: "The map draws" });
+    expect(saved.status).toBe(201);
+    expect(saved.data!.scenario.state).toBe("draft");
+    expect(saved.data!.scenario.steps.map((s: any) => s.text)).toEqual(goodSteps.map((s) => s.text));
+    expect(saved.data!.try.savedScenarioId).toBe(saved.data!.scenario.id);
+    expect((await t.call("POST", `${hub}/tries/${tryId}/save`, { featureId: ids.Map, name: "Again" })).status).toBe(409);
+
+    // A try never counts toward health or the card.
+    const map = await t.call("GET", `${hub}/map`);
+    expect(map.data!.features[0].health).toBe("not_tested");
+    expect(map.data!.recordings).toEqual([]);
+  });
+
+  it("records a runner that could not answer, and frees a save whose scenario name is taken", async () => {
+    const t = await harness();
+    const { hubId, ids } = await hubWithFeatures(t, ["Map"]);
+    const hub = `/v1/organizations/${ORG}/qa/hubs/${hubId}`;
+    // Two tries asked in the same millisecond may be claimed in either order; each is claimed once.
+    const asked = [
+      (await t.call("POST", `${hub}/tries`, { question: "One?" })).data!.try,
+      (await t.call("POST", `${hub}/tries`, { question: "Two?", asRole: "visitor" })).data!.try,
+    ];
+    const first = (await t.call("POST", `${hub}/tries/claim`)).data!.try;
+    const second = (await t.call("POST", `${hub}/tries/claim`)).data!.try;
+    expect([first.id, second.id].sort()).toEqual(asked.map((x: any) => x.id).sort());
+    const visitor = [first, second].find((x: any) => x.asRole === "visitor");
+    const other = [first, second].find((x: any) => x.asRole !== "visitor");
+    const failed = await t.call("POST", `${hub}/tries/${other.id}/result`, { error: "The browser could not start." });
+    expect(failed.data!.try.status).toBe("errored");
+    expect(failed.data!.try.message).toBe("The browser could not start.");
+    const b = visitor.id;
+    await t.call("POST", `${hub}/tries/${b}/result`, { answer: "unclear", headline: "Not sure.", steps: goodSteps });
+    await t.call("POST", `${hub}/scenarios`, { featureId: ids.Map, name: "Taken", steps: goodSteps });
+    expect((await t.call("POST", `${hub}/tries/${b}/save`, { featureId: ids.Map, name: "Taken" })).status).toBe(409);
+    // The claim was released, so another name works.
+    const ok = await t.call("POST", `${hub}/tries/${b}/save`, { featureId: ids.Map, name: "Free" });
+    expect(ok.status).toBe(201);
+    expect(ok.data!.scenario.asRole).toBe("visitor");
+    expect((await t.call("GET", `${hub}/tries/not-a-try`)).status).toBe(404);
   });
 });

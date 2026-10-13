@@ -22,7 +22,9 @@
     "stage": {
       "workers_dev": false,
       "vars": {
-        "ENVIRONMENT": "stage"
+        "ENVIRONMENT": "stage",
+        "GITHUB_REPOSITORY": "marvelvarghese/orun-qa",
+        "GITHUB_TRY_WORKFLOW": "qa-try.yml"
       },
       "hyperdrive": [
         {

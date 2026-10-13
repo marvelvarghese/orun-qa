@@ -123,7 +123,7 @@ function parseAction(v: unknown): StepAction | string {
   }
 }
 
-function parseSteps(fields: Fields, body: Record<string, unknown>, required: boolean): Step[] | undefined {
+export function parseSteps(fields: Fields, body: Record<string, unknown>, required: boolean): Step[] | undefined {
   const v = body.steps;
   if (v === undefined) {
     if (required) fields.steps = ["Required"];
@@ -152,7 +152,7 @@ function parseSteps(fields: Fields, body: Record<string, unknown>, required: boo
   return steps;
 }
 
-function enumField<T extends string>(fields: Fields, body: Record<string, unknown>, key: string, allowedValues: readonly T[]): T | undefined {
+export function enumField<T extends string>(fields: Fields, body: Record<string, unknown>, key: string, allowedValues: readonly T[]): T | undefined {
   const v = body[key];
   if (v === undefined) return undefined;
   if (typeof v !== "string" || !(allowedValues as readonly string[]).includes(v)) {
@@ -168,7 +168,7 @@ function optRole(fields: Fields, body: Record<string, unknown>): string | null |
   return v === undefined ? undefined : v === "" ? null : v;
 }
 
-const stepIds = (ctx: Ctx, steps: Step[]) => steps.map(() => nextId(ctx));
+export const stepIds = (ctx: Ctx, steps: Step[]) => steps.map(() => nextId(ctx));
 
 // ── scenarios ────────────────────────────────────────────────────────────────
 
@@ -367,9 +367,9 @@ export async function finishRun(ctx: Ctx, hubId: string, runId: string, request:
   });
 }
 
-const BASE64_RE = /^[A-Za-z0-9+/]*={0,2}$/;
+export const BASE64_RE = /^[A-Za-z0-9+/]*={0,2}$/;
 
-function parseTimings(fields: Fields, v: unknown): StepTiming[] | undefined {
+export function parseTimings(fields: Fields, v: unknown): StepTiming[] | undefined {
   if (v === undefined) return [];
   if (!Array.isArray(v) || v.length > RUN_LIMITS.stepsMax) {
     fields.stepTimings = [`A list of at most ${RUN_LIMITS.stepsMax} entries`];
@@ -386,7 +386,7 @@ function parseTimings(fields: Fields, v: unknown): StepTiming[] | undefined {
   return (v as Record<string, unknown>[]).map((t) => ({ ord: t.ord as number, startMs: t.startMs as number, endMs: t.endMs as number, ok: t.ok as boolean }));
 }
 
-function parseApiCalls(fields: Fields, v: unknown): ApiCall[] | undefined {
+export function parseApiCalls(fields: Fields, v: unknown): ApiCall[] | undefined {
   if (v === undefined) return [];
   if (!Array.isArray(v) || v.length > RUN_LIMITS.apiCallsMax) {
     fields.apiCalls = [`A list of at most ${RUN_LIMITS.apiCallsMax} entries`];
@@ -465,7 +465,7 @@ export async function postResult(ctx: Ctx, hubId: string, runId: string, request
 }
 
 /** Decoded size of a base64 string. */
-const base64Bytes = (b64: string) => (b64.length / 4) * 3 - (b64.endsWith("==") ? 2 : b64.endsWith("=") ? 1 : 0);
+export const base64Bytes = (b64: string) => (b64.length / 4) * 3 - (b64.endsWith("==") ? 2 : b64.endsWith("=") ? 1 : 0);
 
 // ── recordings ───────────────────────────────────────────────────────────────
 
