@@ -30,6 +30,8 @@ export interface TryViewProps {
   agentHref: string;
   /** Tries are answered for Orun QA's own workspace only. */
   available: boolean;
+  /** Following the current try stopped (it took too long, or the page could not reach the API). */
+  stale?: boolean;
 }
 
 const ANSWER_PILL = {
@@ -57,7 +59,9 @@ function ideasFor(features: PublicFeature[]): string[] {
 
 function SaveForm({ t, features, onSave }: { t: PublicTry; features: PublicFeature[]; onSave: TryViewProps["onSave"] }) {
   const [open, setOpen] = React.useState(false);
-  const [featureId, setFeatureId] = React.useState(t.featureId ?? features[0]?.id ?? "");
+  const [chosen, setFeatureId] = React.useState(t.featureId ?? "");
+  // The features may arrive after the form: fall back to the first one shown.
+  const featureId = chosen || features[0]?.id || "";
   const [name, setName] = React.useState(t.question.replace(/\?$/, "").slice(0, 120));
   const [saving, setSaving] = React.useState(false);
   if (t.savedScenarioId) return <span className="pill ok">Saved as a draft scenario</span>;
@@ -113,7 +117,7 @@ function SaveForm({ t, features, onSave }: { t: PublicTry; features: PublicFeatu
   );
 }
 
-export function TryView({ features, recent, current, startingNow, asking, onAsk, onPick, onSave, loadRecording, agentHref, available }: TryViewProps) {
+export function TryView({ features, recent, current, startingNow, asking, onAsk, onPick, onSave, loadRecording, agentHref, available, stale = false }: TryViewProps) {
   const [question, setQuestion] = React.useState("");
   const [asRole, setAsRole] = React.useState<TryRole>("owner");
   const [featureId, setFeatureId] = React.useState<string>("");
@@ -232,7 +236,7 @@ export function TryView({ features, recent, current, startingNow, asking, onAsk,
           </div>
         </section>
 
-        <section style={{ flex: "999 1 600px", minWidth: 0, display: "flex", flexDirection: "column", gap: 16 }}>
+        <section style={{ flex: "999 1 600px", minWidth: 0, display: "flex", flexDirection: "column", gap: 16 }} aria-live="polite">
           {current === null && (
             <div className="card" style={{ padding: 16 }}>
               <RecordingFrame big caption="Ask a question, and the recording of the AI trying it appears here" />
@@ -240,7 +244,7 @@ export function TryView({ features, recent, current, startingNow, asking, onAsk,
           )}
 
           {waiting && current && (
-            <div className="card" style={{ padding: 16 }} aria-live="polite">
+            <div className="card" style={{ padding: 16 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, gap: 8, flexWrap: "wrap" }}>
                 <span style={{ fontWeight: 700, fontSize: 17 }}>
                   {current.status === "running" ? "Trying it now…" : startingNow ? "Starting the runner…" : "Waiting for the runner"}
@@ -263,6 +267,9 @@ export function TryView({ features, recent, current, startingNow, asking, onAsk,
               <p className="muted" style={{ margin: "10px 0 0", fontSize: 14 }}>
                 “{current.question}”
               </p>
+              {stale && (
+                <p style={{ margin: "8px 0 0", fontSize: 14, color: "#8E2F2A" }}>Still not answered. Reload the page to look again.</p>
+              )}
             </div>
           )}
 
@@ -307,7 +314,7 @@ export function TryView({ features, recent, current, startingNow, asking, onAsk,
                       load={() => loadRecording(current.id)}
                       steps={current.steps.map((s, i) => ({ ord: i, text: s.text, action: s.action }))}
                       timings={current.stepTimings}
-                      verdict="works"
+                      verdict={current.answer === "yes" ? "works" : "skipped"}
                       failingStep={null}
                       recordedBy="Recorded just now on stage"
                     />
@@ -347,7 +354,7 @@ export function TryView({ features, recent, current, startingNow, asking, onAsk,
                         const a = s.action as Extract<typeof s.action, { type: "expect_response" }>;
                         return (
                           <div key={i} className="api">
-                            <span className="pill ok">
+                            <span className={a.status >= 400 ? "pill warn" : "pill ok"}>
                               <i />
                               {a.status >= 400 ? "Refused" : "Works"}
                             </span>

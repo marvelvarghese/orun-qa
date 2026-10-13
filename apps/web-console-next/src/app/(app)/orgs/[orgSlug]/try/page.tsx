@@ -17,44 +17,59 @@ export default function TryPage() {
   const slug = params?.orgSlug ?? "";
   return (
     <OrgScope slug={slug}>
-      {(org) => <HubScope orgId={org.id}>{(hub) => <Inner orgId={org.id} orgSlug={org.slug} hubId={hub.id} hubSlug={hub.slug} />}</HubScope>}
+      {(org) => <HubScope orgId={org.id}>{(hub) => <Inner orgId={org.id} orgSlug={org.slug} hubId={hub.id} />}</HubScope>}
     </OrgScope>
   );
 }
 
-/** While a try waits or runs, look again this often. */
+/** While a try waits or runs, look again this often — for at most this long. */
 const POLL_MS = 3000;
+const FOLLOW_MAX_MS = 20 * 60 * 1000;
 
-function Inner({ orgId, orgSlug, hubId, hubSlug }: { orgId: string; orgSlug: string; hubId: string; hubSlug: string }) {
+function Inner({ orgId, orgSlug, hubId }: { orgId: string; orgSlug: string; hubId: string }) {
   const { client } = useSession();
   const { toast } = useToast();
   const qc = useQueryClient();
   const map = useApiQuery(qk.qaMap(orgId, hubId), () => wrap(() => client.qa.getMap(orgId, hubId)));
-  const recent = useApiQuery(qk.qaTries(orgId, hubId), () => wrap(async () => (await client.qa.listTries(orgId, hubId)).tries));
+  const recent = useApiQuery(qk.qaTries(orgId, hubId), () => wrap(() => client.qa.listTries(orgId, hubId)));
   const [currentId, setCurrentId] = React.useState<string | null>(null);
   const [startingNow, setStartingNow] = React.useState(false);
   const [asking, setAsking] = React.useState(false);
   const [current, setCurrent] = React.useState<PublicTry | null>(null);
 
   // Open on the newest try until the person picks or asks one.
-  const shownId = currentId ?? recent.data?.[0]?.id ?? null;
+  const shownId = currentId ?? recent.data?.tries[0]?.id ?? null;
+  const [stale, setStale] = React.useState(false);
 
-  // Follow the shown try; poll while it waits or runs.
+  // Follow the shown try; poll while it waits or runs. A failed look tries
+  // again with backoff, and following stops after a while — the page says so.
   React.useEffect(() => {
-    if (!shownId) {
-      setCurrent(null);
-      return;
-    }
+    setStale(false);
+    setCurrent((c) => (c && c.id === shownId ? c : null));
+    if (!shownId) return;
     let stopped = false;
     let timer: number | null = null;
+    let failures = 0;
+    const started = Date.now();
+    const again = (ms: number) => {
+      if (Date.now() - started > FOLLOW_MAX_MS) {
+        setStale(true);
+        return;
+      }
+      timer = window.setTimeout(look, document.hidden ? Math.max(ms, 15_000) : ms);
+    };
     const look = async () => {
       const r = await wrap(async () => (await client.qa.getTry(orgId, hubId, shownId)).try);
       if (stopped) return;
-      if (r.ok) {
-        setCurrent(r.data);
-        if (r.data.status === "queued" || r.data.status === "running") timer = window.setTimeout(look, POLL_MS);
-        else void qc.invalidateQueries({ queryKey: qk.qaTries(orgId, hubId) });
+      if (!r.ok) {
+        failures++;
+        again(Math.min(POLL_MS * 2 ** failures, 30_000));
+        return;
       }
+      failures = 0;
+      setCurrent(r.data);
+      if (r.data.status === "queued" || r.data.status === "running") again(POLL_MS);
+      else void qc.invalidateQueries({ queryKey: qk.qaTries(orgId, hubId) });
     };
     void look();
     return () => {
@@ -68,7 +83,7 @@ function Inner({ orgId, orgSlug, hubId, hubSlug }: { orgId: string; orgSlug: str
     const r = await wrap(() => client.qa.createTry(orgId, hubId, { question, asRole, featureId }));
     setAsking(false);
     if (!r.ok) {
-      toast({ kind: "error", title: "Not asked", description: r.error.code === "not_found" ? "Trying needs a role that can run checks." : r.error.message });
+      toast({ kind: "error", title: "Not asked", description: r.error.message });
       return;
     }
     setStartingNow(r.data.dispatched || r.data.queuedBehind);
@@ -83,7 +98,7 @@ function Inner({ orgId, orgSlug, hubId, hubSlug }: { orgId: string; orgSlug: str
       toast({
         kind: "error",
         title: "Not saved",
-        description: r.error.code === "not_found" ? "Saving needs a role that writes scenarios." : r.error.message,
+        description: r.error.message,
       });
       return false;
     }
@@ -99,7 +114,8 @@ function Inner({ orgId, orgSlug, hubId, hubSlug }: { orgId: string; orgSlug: str
   return (
     <TryView
       features={map.data?.features ?? []}
-      recent={recent.data ?? []}
+      recent={recent.data?.tries ?? []}
+      stale={stale}
       current={current}
       startingNow={startingNow}
       asking={asking}
@@ -111,8 +127,8 @@ function Inner({ orgId, orgSlug, hubId, hubSlug }: { orgId: string; orgSlug: str
       onSave={onSave}
       loadRecording={loadRecording}
       agentHref={qaHref(orgSlug, "agent", hubId)}
-      // The runner answers tries for Orun QA's own hub.
-      available={hubSlug === "orun-qa"}
+      // The API says whether its runner answers this workspace's tries.
+      available={recent.data?.served ?? false}
     />
   );
 }
