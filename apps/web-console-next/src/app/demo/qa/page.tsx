@@ -3,12 +3,13 @@
 import * as React from "react";
 import Link from "next/link";
 import { CheckCheck, Bug, ClipboardList, FolderKanban, Gauge, LayoutGrid, ListChecks, MessageSquare, Network, Play, Settings, UserRound } from "lucide-react";
-import type { PublicArea, PublicFeature, FeatureHealth, PublicResult, PublicScenario } from "@saas/contracts/qa";
+import type { PublicArea, PublicFeature, FeatureHealth, PublicResult, PublicScenario, PublicTry } from "@saas/contracts/qa";
 import { DEMO_RECORDING, DEMO_RECORDING_MESSAGE, DEMO_RECORDING_TIMINGS } from "./recording.fixture";
 import { useSearchParams } from "next/navigation";
 import { FeaturesView } from "@/components/qa/features-view";
 import { FeatureView } from "@/components/qa/feature-view";
 import { TestsView } from "@/components/qa/tests-view";
+import { TryView } from "@/components/qa/try-view";
 
 /**
  * /demo/qa — a token-free preview of the Orun QA screens with the design
@@ -143,6 +144,31 @@ const SCENARIOS: PublicScenario[] = [
 ];
 const HISTORY: PublicResult[] = [RECORDED, ...Array.from({ length: 13 }, (_, i) => demoResult(`res_h${i}`, "scn_1", "works", { createdAt: new Date(Date.parse(AT) - (i + 1) * 86400000).toISOString() }))];
 
+const DEMO_TRY: PublicTry = {
+  id: "try_demo",
+  hubId: "hub_demo",
+  featureId: null,
+  question: "Does the sign-in page offer the company login?",
+  asRole: "visitor",
+  status: "answered",
+  answer: "no",
+  headline: "No. The sign-in page offers an email code, not a company login.",
+  explanation: "As a visitor, the sign-in page asks for an email and sends a code. There is no button to continue with a company account, and nothing on the page mentions one.",
+  steps: [
+    { text: "Open the sign-in page", action: { type: "goto", path: "/login" } },
+    { text: "It asks you to sign in", action: { type: "expect_text", text: "Sign in" } },
+    { text: "The sign-in options were read", action: { type: "expect_response", method: "GET", path: "/v1/auth/oauth/providers", status: 200 } },
+  ],
+  stepTimings: DEMO_RECORDING_TIMINGS.slice(0, 2),
+  apiCalls: [{ method: "GET", path: "/v1/auth/oauth/providers", status: 200, ms: 116 }],
+  hasRecording: true,
+  message: "",
+  savedScenarioId: null,
+  createdAt: AT,
+  startedAt: AT,
+  finishedAt: AT,
+};
+
 export default function QaDemoPage() {
   const [picked, setPicked] = React.useState("scn_1");
   const view = useSearchParams()?.get("view");
@@ -154,7 +180,21 @@ export default function QaDemoPage() {
     <div className="flex min-h-screen bg-background">
       <Rail />
       <main className="mx-auto w-full max-w-[1320px] flex-1 px-8 pb-16 pt-8">
-        {view === "tests" ? (
+        {view === "try" ? (
+          <TryView
+            features={FEATURES}
+            recent={[DEMO_TRY, { ...DEMO_TRY, id: "try_2", question: "Can I archive a project with open tasks?", answer: "yes", headline: "Yes." }, { ...DEMO_TRY, id: "try_3", question: "Two people move the same task at once", status: "errored", answer: null, message: "It took longer than four minutes without an answer." }]}
+            current={DEMO_TRY}
+            startingNow={false}
+            asking={false}
+            onAsk={() => undefined}
+            onPick={() => undefined}
+            onSave={async () => true}
+            loadRecording={async () => DEMO_RECORDING}
+            agentHref="#"
+            available
+          />
+        ) : view === "tests" ? (
           <TestsView
             scenarios={SCENARIOS.map((s) =>
               s.id === "scn_2"
