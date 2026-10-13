@@ -60,10 +60,12 @@ export interface QaTriesRepository {
    * try left running past `staleBefore`. Null when the queue is empty.
    */
   claimTry(orgId: string, hubId: string, claimedBy: string, at: Date, staleBefore: Date): Promise<QaResult<Try | null>>;
-  /** Record the answer of a running try; conflict if it is not running. */
-  answerTry(orgId: string, hubId: string, id: string, input: AnswerTryInput): Promise<QaResult<Try>>;
-  /** The runner could not finish it. */
-  failTry(orgId: string, hubId: string, id: string, message: string, at: Date): Promise<QaResult<Try>>;
+  /** Record the answer of a try running for `claimedBy`; conflict otherwise. */
+  answerTry(orgId: string, hubId: string, id: string, claimedBy: string, input: AnswerTryInput): Promise<QaResult<Try>>;
+  /** The runner that claimed it could not finish it. */
+  failTry(orgId: string, hubId: string, id: string, claimedBy: string, message: string, at: Date): Promise<QaResult<Try>>;
+  /** Is a try of the hub already waiting or being answered? (One dispatch answers them all.) */
+  hasActiveTry(orgId: string, hubId: string, exceptId: string): Promise<QaResult<boolean>>;
   /** Claim a try's save for a scenario id; conflict if it is not answered or already saved. */
   markSaved(orgId: string, hubId: string, id: string, scenarioId: string): Promise<QaResult<Try>>;
   /** Release a claimed save whose scenario could not be created. */
@@ -197,16 +199,16 @@ export function createQaTriesRepository(executor: SqlExecutor | TransactionalSql
       );
     },
 
-    answerTry(orgId, hubId, id, input) {
+    answerTry(orgId, hubId, id, claimedBy, input) {
       return guard("try", async () => {
         const r = await executor.execute<Row>(
           `UPDATE qa.tries SET status = 'answered', answer = $1, headline = $2, explanation = $3, steps = $4::jsonb,
                   step_timings = $5::jsonb, api_calls = $6::jsonb, recording = $7, recording_bytes = $8, finished_at = $9
-            WHERE org_id = $10 AND hub_id = $11 AND id = $12 AND status = 'running'
+            WHERE org_id = $10 AND hub_id = $11 AND id = $12 AND status = 'running' AND claimed_by = $13
             RETURNING ${COLUMNS}`,
           [
             input.answer, input.headline, input.explanation, JSON.stringify(input.steps), JSON.stringify(input.stepTimings), JSON.stringify(input.apiCalls),
-            input.recording?.events ?? null, input.recording?.sizeBytes ?? 0, input.at.toISOString(), orgId, hubId, id,
+            input.recording?.events ?? null, input.recording?.sizeBytes ?? 0, input.at.toISOString(), orgId, hubId, id, claimedBy,
           ],
         );
         if (r.rowCount > 0) return { ok: true, value: mapTry(r.rows[0]!) };
@@ -214,12 +216,12 @@ export function createQaTriesRepository(executor: SqlExecutor | TransactionalSql
       });
     },
 
-    failTry(orgId, hubId, id, message, at) {
+    failTry(orgId, hubId, id, claimedBy, message, at) {
       return guard("try", async () => {
         const r = await executor.execute<Row>(
           `UPDATE qa.tries SET status = 'errored', message = $1, finished_at = $2
-            WHERE org_id = $3 AND hub_id = $4 AND id = $5 AND status = 'running' RETURNING ${COLUMNS}`,
-          [message, at.toISOString(), orgId, hubId, id],
+            WHERE org_id = $3 AND hub_id = $4 AND id = $5 AND status = 'running' AND claimed_by = $6 RETURNING ${COLUMNS}`,
+          [message, at.toISOString(), orgId, hubId, id, claimedBy],
         );
         if (r.rowCount > 0) return { ok: true, value: mapTry(r.rows[0]!) };
         return (await current(executor, orgId, hubId, id)) ? conflict("try") : NOT_FOUND;
@@ -228,9 +230,13 @@ export function createQaTriesRepository(executor: SqlExecutor | TransactionalSql
 
     markSaved(orgId, hubId, id, scenarioId) {
       return guard("try", async () => {
+        // A claim whose scenario never got made (the save died halfway) is free to take again.
         const r = await executor.execute<Row>(
           `UPDATE qa.tries SET saved_scenario_id = $1
-            WHERE org_id = $2 AND hub_id = $3 AND id = $4 AND status = 'answered' AND saved_scenario_id IS NULL RETURNING ${COLUMNS}`,
+            WHERE org_id = $2 AND hub_id = $3 AND id = $4 AND status = 'answered'
+              AND (saved_scenario_id IS NULL
+                   OR NOT EXISTS (SELECT 1 FROM qa.scenarios s WHERE s.org_id = $2 AND s.id = qa.tries.saved_scenario_id))
+            RETURNING ${COLUMNS}`,
           [scenarioId, orgId, hubId, id],
         );
         if (r.rowCount > 0) return { ok: true, value: mapTry(r.rows[0]!) };
@@ -245,6 +251,16 @@ export function createQaTriesRepository(executor: SqlExecutor | TransactionalSql
           [orgId, hubId, id, scenarioId],
         );
         return { ok: true, value: { cleared: r.rowCount > 0 } };
+      });
+    },
+
+    hasActiveTry(orgId, hubId, exceptId) {
+      return guard("try", async () => {
+        const r = await executor.execute(
+          `SELECT id FROM qa.tries WHERE org_id = $1 AND hub_id = $2 AND status IN ('queued', 'running') AND id <> $3 LIMIT 1`,
+          [orgId, hubId, exceptId],
+        );
+        return { ok: true, value: r.rowCount > 0 };
       });
     },
 

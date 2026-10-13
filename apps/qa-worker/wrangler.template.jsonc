@@ -24,7 +24,8 @@
       "vars": {
         "ENVIRONMENT": "stage",
         "GITHUB_REPOSITORY": "marvelvarghese/orun-qa",
-        "GITHUB_TRY_WORKFLOW": "qa-try.yml"
+        "GITHUB_TRY_WORKFLOW": "qa-try.yml",
+        "GITHUB_TRY_ORG": "org_08f50945edc244dda91b7c0cc9f23828"
       },
       "hyperdrive": [
         {

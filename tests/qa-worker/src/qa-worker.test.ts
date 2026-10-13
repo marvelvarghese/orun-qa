@@ -610,6 +610,7 @@ describe("qa-worker", () => {
     const created = await t.call("POST", `${hub}/tries`, { question: "Does the map draw?", featureId: ids.Map });
     expect(created.status).toBe(201);
     expect(created.data!.dispatched).toBe(false); // no GitHub token in tests: it waits for the runner
+    expect(created.data!.queuedBehind).toBe(false);
     const tryId = created.data!.try.id;
     expect(tryId).toMatch(/^try_[0-9a-f]{32}$/);
     expect(created.data!.try.status).toBe("queued");
@@ -673,6 +674,8 @@ describe("qa-worker", () => {
     ];
     const first = (await t.call("POST", `${hub}/tries/claim`)).data!.try;
     const second = (await t.call("POST", `${hub}/tries/claim`)).data!.try;
+    // The second was asked while the first waited: it rides along.
+    expect(asked.length).toBe(2);
     expect([first.id, second.id].sort()).toEqual(asked.map((x: any) => x.id).sort());
     const visitor = [first, second].find((x: any) => x.asRole === "visitor");
     const other = [first, second].find((x: any) => x.asRole !== "visitor");

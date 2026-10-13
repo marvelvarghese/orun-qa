@@ -37,11 +37,14 @@ export function publicTry(t: Try): PublicTry {
 
 /**
  * Start the try workflow now rather than at the runner's next pass. Best
- * effort: without a token, or if GitHub refuses, the try simply waits.
+ * effort: without a token, or if GitHub refuses, the try simply waits. Only the
+ * workspace the runner serves (GITHUB_TRY_ORG) dispatches — the runner answers
+ * no one else's tries.
  */
 async function dispatch(ctx: Ctx, tryId: string): Promise<boolean> {
-  const { GITHUB_DISPATCH_TOKEN: token, GITHUB_REPOSITORY: repo, GITHUB_TRY_WORKFLOW: workflow } = ctx.env;
+  const { GITHUB_DISPATCH_TOKEN: token, GITHUB_REPOSITORY: repo, GITHUB_TRY_WORKFLOW: workflow, GITHUB_TRY_ORG: servedOrg } = ctx.env;
   if (!token || !repo || !/^[\w.-]+\/[\w.-]+$/.test(repo)) return false;
+  if (!servedOrg || servedOrg !== toPublic("org", ctx.orgId)) return false;
   try {
     const res = await fetch(`https://api.github.com/repos/${repo}/actions/workflows/${encodeURIComponent(workflow || "qa-try.yml")}/dispatches`, {
       method: "POST",
@@ -74,7 +77,8 @@ export async function createTry(ctx: Ctx, hubId: string, request: Request): Prom
   }
   if (Object.keys(fields).length > 0) return validationError(ctx.requestId, fields);
 
-  return withRepo(ctx, "qa.run.write", async (repo, _runs, tries) => {
+  let created: { id: string; othersWaiting: boolean } | null = null;
+  const response = await withRepo(ctx, "qa.run.write", async (repo, _runs, tries) => {
     const hub = await repo.getHub(ctx.orgId, hubId);
     if (!hub.ok) return fromRepoError(hub.error, ctx.requestId);
     const r = await tries.createTry({
@@ -89,10 +93,17 @@ export async function createTry(ctx: Ctx, hubId: string, request: Request): Prom
       createdAt: now(ctx),
     });
     if (!r.ok) return fromRepoError(r.error, ctx.requestId);
-    const pub = publicTry(r.value);
-    const dispatched = await dispatch(ctx, pub.id);
-    return successResponse({ try: pub, dispatched }, ctx.requestId, 201);
+    const waiting = await tries.hasActiveTry(ctx.orgId, hubId, r.value.id);
+    created = { id: toPublic("try", r.value.id), othersWaiting: waiting.ok && waiting.value };
+    return successResponse({ try: publicTry(r.value) }, ctx.requestId, 201);
   });
+  if (!created || response.status !== 201) return response;
+  const made: { id: string; othersWaiting: boolean } = created;
+  // After the database is let go: one job answers every waiting try, so a try
+  // asked while others wait rides along with the job already started for them.
+  const dispatched = made.othersWaiting ? false : await dispatch(ctx, made.id);
+  const sent = (await response.json()) as { data: { try: PublicTry }; meta: unknown };
+  return Response.json({ ...sent, data: { ...sent.data, dispatched, queuedBehind: made.othersWaiting } }, { status: 201, headers: { "content-type": "application/json" } });
 }
 
 export function listTries(ctx: Ctx, hubId: string): Promise<Response> {
@@ -137,8 +148,8 @@ export async function postTryResult(ctx: Ctx, hubId: string, tryId: string, requ
   if (error) {
     if (Object.keys(fields).length > 0) return validationError(ctx.requestId, fields);
     return withRepo(ctx, "qa.run.write", async (_repo, _runs, tries) => {
-      const r = await tries.failTry(ctx.orgId, hubId, tryId, error, now(ctx));
-      if (!r.ok && r.error.kind === "conflict") return errorResponse("conflict", "That try is not running", 409, ctx.requestId);
+      const r = await tries.failTry(ctx.orgId, hubId, tryId, ctx.actor.subjectId, error, now(ctx));
+      if (!r.ok && r.error.kind === "conflict") return errorResponse("conflict", "That try is not running for you", 409, ctx.requestId);
       return r.ok ? successResponse({ try: publicTry(r.value) }, ctx.requestId) : fromRepoError(r.error, ctx.requestId);
     });
   }
@@ -161,7 +172,7 @@ export async function postTryResult(ctx: Ctx, hubId: string, tryId: string, requ
   if (Object.keys(fields).length > 0) return validationError(ctx.requestId, fields);
 
   return withRepo(ctx, "qa.run.write", async (_repo, _runs, tries) => {
-    const r = await tries.answerTry(ctx.orgId, hubId, tryId, {
+    const r = await tries.answerTry(ctx.orgId, hubId, tryId, ctx.actor.subjectId, {
       answer: answer as TryAnswer,
       headline: headline!,
       explanation: explanation ?? "",
@@ -171,7 +182,7 @@ export async function postTryResult(ctx: Ctx, hubId: string, tryId: string, requ
       recording: recording === undefined ? null : { events: recording, sizeBytes: base64Bytes(recording) },
       at: now(ctx),
     });
-    if (!r.ok && r.error.kind === "conflict") return errorResponse("conflict", "That try is not running", 409, ctx.requestId);
+    if (!r.ok && r.error.kind === "conflict") return errorResponse("conflict", "That try is not running for you", 409, ctx.requestId);
     return r.ok ? successResponse({ try: publicTry(r.value) }, ctx.requestId) : fromRepoError(r.error, ctx.requestId);
   });
 }

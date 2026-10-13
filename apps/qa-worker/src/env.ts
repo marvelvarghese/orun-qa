@@ -11,4 +11,6 @@ export interface Env {
   GITHUB_DISPATCH_TOKEN?: string;
   GITHUB_REPOSITORY?: string;
   GITHUB_TRY_WORKFLOW?: string;
+  /** The workspace (org_…) whose tries the runner answers; only its tries dispatch. */
+  GITHUB_TRY_ORG?: string;
 }

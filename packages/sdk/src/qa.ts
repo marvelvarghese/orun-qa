@@ -185,8 +185,12 @@ export class QaClient {
 
   // ── QA2: Try a scenario ──
 
-  /** Ask a plain question; the runner's AI tries it once on stage. `dispatched` says whether it started at once. */
-  createTry(orgId: string, hubId: string, body: CreateTryRequest, opts: RequestOptions = {}): Promise<{ try: PublicTry; dispatched: boolean }> {
+  /**
+   * Ask a plain question; the runner's AI tries it once on stage. `dispatched`:
+   * a runner job was started for it; `queuedBehind`: it waits behind tries
+   * already being answered (the same job takes it).
+   */
+  createTry(orgId: string, hubId: string, body: CreateTryRequest, opts: RequestOptions = {}): Promise<{ try: PublicTry; dispatched: boolean; queuedBehind: boolean }> {
     return this.transport.request({ method: "POST", path: `${this.base(orgId, hubId)}/tries`, body }, opts);
   }
 
