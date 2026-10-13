@@ -103,7 +103,7 @@ group("coverage", () => {
   });
 });
 
-import { templated, toAction, tryBrief, TRY_TOOLS } from "./try.js";
+import { stepProblem, templated, toAction, tryBrief, TRY_TOOLS } from "./try.js";
 import { STEP_ACTION_TYPES as TYPES } from "@saas/contracts/qa";
 
 group("try a scenario", () => {
@@ -139,5 +139,23 @@ group("try a scenario", () => {
   it("briefs a visitor as signed out", () => {
     const t = { asRole: "visitor", question: "q" } as never;
     expect(tryBrief(t, v, feats)).toContain("not signed in");
+  });
+});
+
+group("a try's steps", () => {
+  const site = "https://console.example";
+  it("are refused before they run when the API would refuse them", () => {
+    expect(stepProblem({ type: "goto", path: "/login" }, "Open sign in", site)).toBeNull();
+    expect(stepProblem({ type: "goto", path: "/\\evil.example/x" }, "Leave", site)).not.toBeNull();
+    expect(stepProblem({ type: "goto", path: "//evil.example" }, "Leave", site)).not.toBeNull();
+    expect(stepProblem({ type: "expect_text", text: "" }, "See it", site)).not.toBeNull();
+    expect(stepProblem({ type: "expect_response", method: "GET", path: "/v1/x", status: 0 }, "Called", site)).not.toBeNull();
+    expect(stepProblem({ type: "click", text: "Archive" }, "   ", site)).not.toBeNull();
+    expect(stepProblem({ type: "fill", label: "Name", value: "x".repeat(2001) }, "Type", site)).not.toBeNull();
+  });
+
+  it("templates whole segments only, so a short id never rewrites another", () => {
+    const shortVars: PathVars = { org: "org", orgId: "org_1", hub: "hub", features: new Map() };
+    expect(templated("/orgs/org/features?hub=hub&x=organic", shortVars, [])).toBe("/orgs/{org}/features?hub={hub}&x=organic");
   });
 });

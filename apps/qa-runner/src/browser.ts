@@ -230,7 +230,7 @@ export async function runScenario(browser: Browser, scenario: PublicScenario, va
 
   try {
     // A scenario written for a visitor runs signed out.
-    opened = await openRecordedPage(browser, session, { signedIn: scenario.asRole !== "visitor", record: scenario.kind === "screens_apis" });
+    opened = await openRecordedPage(browser, session, { signedIn: scenario.asRole?.toLowerCase() !== "visitor", record: scenario.kind === "screens_apis" });
     for (const step of scenario.steps) {
       const start = Date.now() - t0;
       try {

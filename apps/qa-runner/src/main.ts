@@ -35,6 +35,8 @@ const SELF_HUB_SLUG = "orun-qa";
 const MODE = process.env.QA_MODE === "try" ? "try" : "run";
 /** A try job answers at most this many before it ends (the next job takes the rest). */
 const TRIES_PER_JOB = 5;
+/** After the scenarios, a scheduled run answers only a couple, so tries never push it past its timeout. */
+const TRIES_AFTER_RUN = 2;
 
 /** Which cadences a trigger runs: a schedule runs the daily set, a deploy adds release checks. */
 const CADENCES: Record<RunTrigger, ScenarioCadence[]> = {
@@ -111,7 +113,7 @@ async function main(): Promise<number> {
 
   const session: ConsoleSession = { consoleUrl: CONSOLE_URL, apiUrl: API_URL, token, storagePrefix: STORAGE_PREFIX };
   const featureList = (await client.qa.listFeatures(org.id, hub.id)).features;
-  if (MODE === "try") return answerTries(client, org.id, hub.id, vars, featureList, session);
+  if (MODE === "try") return answerTries(client, org.id, hub.id, vars, featureList, session, TRIES_PER_JOB);
 
   const cadences = CADENCES[TRIGGER] ?? CADENCES.manual;
   const toRun = (await client.qa.listScenarios(org.id, hub.id)).scenarios.filter((s) => s.state === "approved" && cadences.includes(s.cadence));
@@ -179,7 +181,7 @@ async function main(): Promise<number> {
     );
   }
   // Answer any tries still waiting (when no dispatch started them at once). Their outcome never fails the run.
-  await answerTries(client, org.id, hubId, vars, featureList, session).catch((err: unknown) => log(`tries: ${err instanceof Error ? err.message : String(err)}`));
+  await answerTries(client, org.id, hubId, vars, featureList, session, TRIES_AFTER_RUN).catch((err: unknown) => log(`tries: ${err instanceof Error ? err.message : String(err)}`));
   return runnerBroke ? 1 : exitCode(results.map((r) => r.result.verdict));
 }
 
@@ -188,12 +190,12 @@ async function main(): Promise<number> {
  * key, each is answered plainly that trying is not set up, rather than left
  * waiting. Returns the job's exit code: only a broken runner fails it.
  */
-async function answerTries(client: OrunQA, orgId: string, hubId: string, vars: PathVars, features: PublicFeature[], session: ConsoleSession): Promise<number> {
+async function answerTries(client: OrunQA, orgId: string, hubId: string, vars: PathVars, features: PublicFeature[], session: ConsoleSession, max: number): Promise<number> {
   const key = process.env.ANTHROPIC_API_KEY;
   let browser: Awaited<ReturnType<typeof chromium.launch>> | null = null;
   let answered = 0;
   try {
-    for (let i = 0; i < TRIES_PER_JOB; i++) {
+    for (let i = 0; i < max; i++) {
       const claimed = (await client.qa.claimTry(orgId, hubId)).try;
       if (!claimed) break;
       if (!key) {
@@ -208,10 +210,15 @@ async function answerTries(client: OrunQA, orgId: string, hubId: string, vars: P
         await client.qa.postTryResult(orgId, hubId, claimed.id, out.result);
         answered++;
       } catch (err) {
-        // Never leave a claimed try running: say it could not be answered.
-        await client.qa
-          .postTryResult(orgId, hubId, claimed.id, { error: `The runner could not finish this try: ${err instanceof Error ? err.message : String(err)}`.slice(0, 4000) })
-          .catch(() => undefined);
+        // Never leave a claimed try running: say it could not be answered (once more if that fails too).
+        const error = `The runner could not finish this try: ${err instanceof Error ? err.message : String(err)}`.slice(0, 4000);
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const sent = await client.qa.postTryResult(orgId, hubId, claimed.id, { error }).then(
+            () => true,
+            () => false,
+          );
+          if (sent) break;
+        }
         log(`try ${claimed.id}: runner error`);
       }
     }

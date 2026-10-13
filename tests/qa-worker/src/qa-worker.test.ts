@@ -691,5 +691,9 @@ describe("qa-worker", () => {
     expect(ok.status).toBe(201);
     expect(ok.data!.scenario.asRole).toBe("visitor");
     expect((await t.call("GET", `${hub}/tries/not-a-try`)).status).toBe(404);
+    expect((await t.call("GET", `${hub}/tries`)).data!.served).toBe(true);
+    // A path with a backslash is another site to a browser: never a step.
+    const bad = await t.call("POST", `${hub}/scenarios`, { featureId: ids.Map, name: "Off site", steps: [{ text: "Go", action: { type: "goto", path: "/\\evil.example/x" } }] });
+    expect(bad.status).toBe(422);
   });
 });

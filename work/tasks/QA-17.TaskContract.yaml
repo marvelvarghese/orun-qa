@@ -6,6 +6,9 @@ spec:
   goal: The runner answers tries — Claude works through each queued question on stage in a real browser, through tools that are exactly the scenario step types, and the runner posts its answer, the steps that worked, the API calls and an rrweb recording; started at once by the try workflow, or by the scheduled run.
   affects:
     - default/orun-qa/qa-runner
+    - default/orun-qa/qa-worker
+    - default/orun-qa/qa-worker-tests
+    - default/orun-qa/sdk
     - .github/workflows/qa-try.yml
     - .github/workflows/qa-run.yml
   doneWhen:
