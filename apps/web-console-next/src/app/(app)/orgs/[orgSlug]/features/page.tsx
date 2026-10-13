@@ -37,6 +37,10 @@ function Inner({ orgId, orgSlug, hubId, hubName, hubSlug }: { orgId: string; org
   const { client } = useSession();
   const { toast } = useToast();
   const map = useApiQuery(qk.qaMap(orgId, hubId), () => wrap(() => client.qa.getMap(orgId, hubId)));
+  const runs = useApiQuery(qk.qaRuns(orgId, hubId), () => wrap(async () => (await client.qa.listRuns(orgId, hubId, { limit: 20 })).runs));
+  const lastRun = (runs.data ?? []).find((r) => r.finishedAt !== null && r.trigger !== "try") ?? null;
+  const lastCheck = lastRun?.finishedAt ? new Date(lastRun.finishedAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : null;
+  const loadRecording = React.useCallback(async (recordingId: string) => (await client.qa.getRecording(orgId, hubId, recordingId)).recording.events, [client, orgId, hubId]);
   const [open, setOpen] = React.useState(false);
   const [importing, setImporting] = React.useState(false);
 
@@ -72,7 +76,9 @@ function Inner({ orgId, orgSlug, hubId, hubName, hubSlug }: { orgId: string; org
               .filter((f) => f.health === "attention")
               .map((f) => ({ kind: "warn" as const, label: "Attention", text: `${f.name} needs attention`, href: qaHref(orgSlug, `features/${f.id}`, hubId) })),
           ]}
-          lastCheck={null}
+          lastCheck={lastCheck}
+          recordings={map.data.recordings ?? []}
+          loadRecording={loadRecording}
           featureHref={(id) => qaHref(orgSlug, `features/${id}`, hubId)}
           planHref={qaHref(orgSlug, "plan", hubId)}
           testsHref={qaHref(orgSlug, "tests", hubId)}

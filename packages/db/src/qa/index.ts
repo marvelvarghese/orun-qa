@@ -31,6 +31,7 @@ export type {
   ApiCall,
   Recording,
   HealthVerdict,
+  FeatureRecordingRow,
   CreateScenarioInput,
   UpdateScenarioInput,
   AddResultInput,

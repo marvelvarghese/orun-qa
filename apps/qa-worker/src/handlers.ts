@@ -1,5 +1,5 @@
 import type { Env } from "./env.js";
-import type { QaRepository, QaRepositoryError, QaRunsRepository, Hub, Area, Feature, FeatureEdge } from "@saas/db/qa";
+import type { QaRepository, QaRepositoryError, QaRunsRepository, Hub, Area, Feature, FeatureEdge, FeatureRecordingRow } from "@saas/db/qa";
 import { createQaRepository, createQaRunsRepository } from "@saas/db/qa";
 import { createSqlExecutor } from "@saas/db/hyperdrive";
 import {
@@ -225,6 +225,17 @@ export async function healthByFeature(runs: QaRunsRepository, orgId: string, hub
   return out;
 }
 
+/**
+ * Each feature's card recording with its scenario's step texts (for the card's
+ * captions). Like health, a failed read degrades to no recordings, not an error.
+ */
+async function cardRecordings(runs: QaRunsRepository, orgId: string, hubId: string): Promise<(FeatureRecordingRow & { stepTexts: string[] })[]> {
+  const [rows, scenarios] = await Promise.all([runs.featureRecordings(orgId, hubId), runs.listScenarios(orgId, hubId)]);
+  if (!rows.ok) return [];
+  const steps = new Map(scenarios.ok ? scenarios.value.map((s) => [s.id, s.steps.map((st) => st.text)]) : []);
+  return rows.value.map((r) => ({ ...r, stepTexts: steps.get(r.scenarioId) ?? [] }));
+}
+
 // ── hubs ─────────────────────────────────────────────────────────────────────
 
 export function listHubs(ctx: Ctx): Promise<Response> {
@@ -424,11 +435,12 @@ export function getMap(ctx: Ctx, hubId: string): Promise<Response> {
   return withRepo(ctx, "qa.feature.read", async (repo, runs) => {
     const hub = await repo.getHub(ctx.orgId, hubId);
     if (!hub.ok) return fromRepoError(hub.error, ctx.requestId);
-    const [areas, features, edges, health] = await Promise.all([
+    const [areas, features, edges, health, recordings] = await Promise.all([
       repo.listAreas(ctx.orgId, hubId),
       repo.listFeatures(ctx.orgId, hubId),
       repo.listEdges(ctx.orgId, hubId),
       healthByFeature(runs, ctx.orgId, hubId),
+      cardRecordings(runs, ctx.orgId, hubId),
     ]);
     if (!areas.ok) return fromRepoError(areas.error, ctx.requestId);
     if (!features.ok) return fromRepoError(features.error, ctx.requestId);
@@ -441,6 +453,17 @@ export function getMap(ctx: Ctx, hubId: string): Promise<Response> {
         features: features.value.map((f) => publicFeature(f, health.get(f.id))),
         // An archived feature leaves the map, and so do its edges.
         edges: edges.value.filter((e) => live.has(e.fromFeatureId) && live.has(e.toFeatureId)).map(publicEdge),
+        recordings: recordings.filter((r) => live.has(r.featureId)).map((r) => ({
+          featureId: toPublic("feat", r.featureId),
+          scenarioId: toPublic("scn", r.scenarioId),
+          scenarioName: r.scenarioName,
+          resultId: toPublic("res", r.resultId),
+          recordingId: toPublic("rec", r.recordingId),
+          verdict: r.verdict,
+          stepTexts: r.stepTexts,
+          stepTimings: r.stepTimings,
+          recordedAt: r.createdAt.toISOString(),
+        })),
       },
       ctx.requestId,
     );
