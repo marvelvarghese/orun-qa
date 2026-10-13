@@ -23,6 +23,12 @@ spec:
     # a months-old copy of a package that has since changed underneath it.
     - component: contracts
     - component: db
+  # Runtime secrets, wire-now-seed-later: an unseeded key is skipped, so this
+  # is inert until stored. GITHUB_DISPATCH_TOKEN starts a try at once (QA2);
+  # without it a try waits for the runner's next scheduled pass.
+  optionalSecretEnv:
+    GITHUB_DISPATCH_TOKEN: "secret://ws_AHTMNGG1/orun-qa/{{ .environment }}/GITHUB_DISPATCH_TOKEN"
+
   subscribe:
     environments:
       - name: dev
@@ -63,6 +69,7 @@ spec:
     owner: sourceplane
     repo: orun-qa
 
+    runtimeSecrets: "GITHUB_DISPATCH_TOKEN"
     turboFilter: "@saas/qa-worker"
     wranglerConfig: wrangler.jsonc
     wranglerTemplate: wrangler.template.jsonc

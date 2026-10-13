@@ -1,0 +1,20 @@
+apiVersion: orun.io/v1
+kind: TaskContract
+metadata:
+  name: QA-16
+spec:
+  goal: A person asks a plain question in a hub and the runner's AI tries it once on stage; the API queues the try, starts the try workflow at once when a dispatch token is set, lets the runner claim it and post the answer with its steps, API calls and recording, and saves it as a draft scenario only when asked.
+  affects:
+    - default/orun-qa/qa-worker
+    - default/orun-qa/qa-worker-tests
+    - default/orun-qa/db
+    - default/orun-qa/db-migrate
+    - default/orun-qa/db-tests
+    - default/orun-qa/contracts
+    - default/orun-qa/sdk
+    - default/orun-qa/api-edge
+  doneWhen:
+    - a try is queued, claimed by exactly one runner, and answered or errored; a try left running is given up
+    - an answered try's recording is readable through its hub, and a try never counts toward health or a card
+    - saving makes one draft scenario with exactly the steps the AI took, even when two saves race
+  gates: []

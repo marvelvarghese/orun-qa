@@ -21,6 +21,10 @@ import type {
   PostResultRequest,
   PublicResult,
   PublicRecording,
+  PublicTry,
+  CreateTryRequest,
+  PostTryResultRequest,
+  SaveTryRequest,
 } from "@saas/contracts/qa";
 
 import type { Transport, RequestOptions } from "./transport.js";
@@ -177,5 +181,43 @@ export class QaClient {
 
   getRecording(orgId: string, hubId: string, recordingId: string, opts: RequestOptions = {}): Promise<{ recording: PublicRecording }> {
     return this.transport.request({ method: "GET", path: `${this.base(orgId, hubId)}/recordings/${encodeURIComponent(recordingId)}` }, opts);
+  }
+
+  // ── QA2: Try a scenario ──
+
+  /**
+   * Ask a plain question; the runner's AI tries it once on stage. `dispatched`:
+   * a runner job was started for it; `queuedBehind`: it waits behind tries
+   * already being answered (the same job takes it).
+   */
+  createTry(orgId: string, hubId: string, body: CreateTryRequest, opts: RequestOptions = {}): Promise<{ try: PublicTry; dispatched: boolean; queuedBehind: boolean }> {
+    return this.transport.request({ method: "POST", path: `${this.base(orgId, hubId)}/tries`, body }, opts);
+  }
+
+  /** The caller's recent tries in the hub, newest first. */
+  listTries(orgId: string, hubId: string, opts: RequestOptions = {}): Promise<{ tries: PublicTry[] }> {
+    return this.transport.request({ method: "GET", path: `${this.base(orgId, hubId)}/tries` }, opts);
+  }
+
+  getTry(orgId: string, hubId: string, tryId: string, opts: RequestOptions = {}): Promise<{ try: PublicTry }> {
+    return this.transport.request({ method: "GET", path: `${this.base(orgId, hubId)}/tries/${encodeURIComponent(tryId)}` }, opts);
+  }
+
+  getTryRecording(orgId: string, hubId: string, tryId: string, opts: RequestOptions = {}): Promise<{ recording: { encoding: "rrweb+gzip+base64"; events: string } }> {
+    return this.transport.request({ method: "GET", path: `${this.base(orgId, hubId)}/tries/${encodeURIComponent(tryId)}/recording` }, opts);
+  }
+
+  /** The runner takes the oldest queued try; null when there is none. */
+  claimTry(orgId: string, hubId: string, opts: RequestOptions = {}): Promise<{ try: PublicTry | null }> {
+    return this.transport.request({ method: "POST", path: `${this.base(orgId, hubId)}/tries/claim` }, opts);
+  }
+
+  postTryResult(orgId: string, hubId: string, tryId: string, body: PostTryResultRequest | { error: string }, opts: RequestOptions = {}): Promise<{ try: PublicTry }> {
+    return this.transport.request({ method: "POST", path: `${this.base(orgId, hubId)}/tries/${encodeURIComponent(tryId)}/result`, body }, opts);
+  }
+
+  /** Keep an answered try as a draft scenario of a feature. */
+  saveTry(orgId: string, hubId: string, tryId: string, body: SaveTryRequest, opts: RequestOptions = {}): Promise<{ try: PublicTry; scenario: PublicScenario }> {
+    return this.transport.request({ method: "POST", path: `${this.base(orgId, hubId)}/tries/${encodeURIComponent(tryId)}/save`, body }, opts);
   }
 }

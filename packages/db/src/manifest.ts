@@ -210,5 +210,14 @@ export const manifest: MigrationManifest = {
       description:
         "Orun QA scenarios and runs (QA2) — scenarios with steps, runs, results and rrweb recordings",
     },
+    {
+      id: "230_qa_tries",
+      context: "qa",
+      path: "230_qa_tries/up.sql",
+      checksum:
+        "db55fa3be5af7f67bc64476d673510e2f922d2718ee80c186d9d91c42a74cf67",
+      description:
+        "Orun QA tries (QA2) — a plain question run once on stage by the runner's AI, answered with a recording",
+    },
   ],
 };

@@ -2,11 +2,12 @@ import type { Env } from "./env.js";
 import type { Ctx, Deps } from "./handlers.js";
 import * as h from "./handlers.js";
 import * as rh from "./runs-handlers.js";
+import * as th from "./tries-handlers.js";
 import { errorResponse, methodNotAllowed, notFound, successResponse } from "./http.js";
 import { fromPublic, generateRequestId, parseOrgPublicId } from "./ids.js";
 
 const REQUEST_ID_RE = /^[\w-]{1,128}$/;
-const BASE = /^\/v1\/organizations\/([^/]+)\/qa\/hubs(?:\/([^/]+)(?:\/(areas|features|map|edges|import|scenarios|runs|recordings)(?:\/([^/]+)(?:\/(confirm|approve|finish|results))?)?)?)?$/;
+const BASE = /^\/v1\/organizations\/([^/]+)\/qa\/hubs(?:\/([^/]+)(?:\/(areas|features|map|edges|import|scenarios|runs|recordings|tries)(?:\/([^/]+)(?:\/(confirm|approve|finish|results|result|save|recording))?)?)?)?$/;
 
 export function isQaPath(pathname: string): boolean {
   return BASE.test(pathname);
@@ -136,6 +137,22 @@ export async function route(request: Request, env: Env, deps?: Deps): Promise<Re
         const recordingId = fromPublic("rec", itemPub);
         if (!recordingId) return errorResponse("not_found", "Not found", 404, requestId);
         return method === "GET" ? rh.getRecording(ctx, hubId, recordingId) : methodNotAllowed(requestId);
+      }
+
+      case "tries": {
+        if (!itemPub) {
+          if (method === "GET") return th.listTries(ctx, hubId);
+          if (method === "POST") return th.createTry(ctx, hubId, request);
+          return methodNotAllowed(requestId);
+        }
+        if (itemPub === "claim" && !verb) return method === "POST" ? th.claimTry(ctx, hubId) : methodNotAllowed(requestId);
+        const tryId = fromPublic("try", itemPub);
+        if (!tryId) return errorResponse("not_found", "Not found", 404, requestId);
+        if (verb === "result") return method === "POST" ? th.postTryResult(ctx, hubId, tryId, request) : methodNotAllowed(requestId);
+        if (verb === "save") return method === "POST" ? th.saveTry(ctx, hubId, tryId, request) : methodNotAllowed(requestId);
+        if (verb === "recording") return method === "GET" ? th.getTryRecording(ctx, hubId, tryId) : methodNotAllowed(requestId);
+        if (verb) return notFound(requestId, url.pathname);
+        return method === "GET" ? th.getTry(ctx, hubId, tryId) : methodNotAllowed(requestId);
       }
 
       default:

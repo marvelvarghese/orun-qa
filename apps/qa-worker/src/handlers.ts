@@ -1,6 +1,6 @@
 import type { Env } from "./env.js";
 import type { QaRepository, QaRepositoryError, QaRunsRepository, Hub, Area, Feature, FeatureEdge, FeatureRecordingRow } from "@saas/db/qa";
-import { createQaRepository, createQaRunsRepository } from "@saas/db/qa";
+import { createQaRepository, createQaRunsRepository, createQaTriesRepository, type QaTriesRepository } from "@saas/db/qa";
 import { createSqlExecutor } from "@saas/db/hyperdrive";
 import {
   QA_LIMITS,
@@ -29,6 +29,7 @@ export interface ActorContext {
 export interface Deps {
   repo?: QaRepository;
   runs?: QaRunsRepository;
+  tries?: QaTriesRepository;
   now?: () => Date;
   newId?: () => string;
 }
@@ -131,15 +132,20 @@ export async function allowed(ctx: Ctx, action: string): Promise<boolean> {
   return decision.allow;
 }
 
-export async function withRepo(ctx: Ctx, action: string, fn: (repo: QaRepository, runs: QaRunsRepository) => Promise<Response>): Promise<Response> {
+export async function withRepo(
+  ctx: Ctx,
+  action: string,
+  fn: (repo: QaRepository, runs: QaRunsRepository, tries: QaTriesRepository) => Promise<Response>,
+): Promise<Response> {
   const { env, requestId, deps } = ctx;
   if (!env.MEMBERSHIP_WORKER || !env.POLICY_WORKER) return unavailable(requestId);
-  if (!(deps?.repo && deps.runs) && !env.PLATFORM_DB) return unavailable(requestId);
+  const injected = deps?.repo && deps.runs && deps.tries;
+  if (!injected && !env.PLATFORM_DB) return unavailable(requestId);
   if (!(await allowed(ctx, action))) return notFound(requestId);
-  if (deps?.repo && deps.runs) return fn(deps.repo, deps.runs);
+  if (injected) return fn(deps.repo!, deps.runs!, deps.tries!);
   const executor = createSqlExecutor(env.PLATFORM_DB!);
   try {
-    return await fn(createQaRepository(executor), createQaRunsRepository(executor));
+    return await fn(createQaRepository(executor), createQaRunsRepository(executor), createQaTriesRepository(executor));
   } catch {
     return unavailable(requestId);
   } finally {

@@ -16,7 +16,7 @@ export function parseOrgPublicId(publicId: string): Uuid | null {
   return uuidFromPublicId(publicId, "org");
 }
 
-export type PublicPrefix = "hub" | "area" | "feat" | "edge" | "scn" | "run" | "res" | "rec";
+export type PublicPrefix = "hub" | "area" | "feat" | "edge" | "scn" | "run" | "res" | "rec" | "try";
 
 export const toPublic = (prefix: "org" | PublicPrefix, uuid: string): string => `${prefix}_${uuidToHex(uuid)}`;
 

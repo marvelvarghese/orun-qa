@@ -39,3 +39,7 @@ export type {
 } from "./runs.js";
 
 export { createQaRunsRepository } from "./runs.js";
+
+export type { Try, TryRole, TryStatus, TryAnswer, AnswerTryInput, QaTriesRepository } from "./tries.js";
+
+export { createQaTriesRepository } from "./tries.js";

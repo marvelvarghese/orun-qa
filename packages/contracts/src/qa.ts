@@ -345,3 +345,67 @@ export function deriveHealth(verdicts: readonly Verdict[]): FeatureHealth {
   if (verdicts.includes("works")) return "verified";
   return "not_tested";
 }
+
+// ── QA2: Try a scenario ─────────────────────────────────────────────────────
+
+export type TryRole = "owner" | "visitor";
+export type TryStatus = "queued" | "running" | "answered" | "errored";
+export type TryAnswer = "yes" | "no" | "unclear";
+
+/** A plain question tried once on stage by the runner's AI. Nothing is saved unless asked. */
+export interface PublicTry {
+  id: string; // try_…
+  hubId: string;
+  featureId: string | null;
+  question: string;
+  asRole: TryRole;
+  status: TryStatus;
+  answer: TryAnswer | null;
+  /** The answer in one sentence, e.g. "No. Members can see invoices but can't download them." */
+  headline: string;
+  explanation: string;
+  /** What the AI did, as scenario steps: saving the try saves exactly these. */
+  steps: { text: string; action: StepAction }[];
+  stepTimings: StepTiming[];
+  apiCalls: ApiCall[];
+  hasRecording: boolean;
+  message: string;
+  savedScenarioId: string | null;
+  createdAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+}
+
+export interface CreateTryRequest {
+  question: string;
+  asRole?: TryRole;
+  featureId?: string | null;
+}
+
+/** POST …/tries/{id}/result — the runner's answer. */
+export interface PostTryResultRequest {
+  answer: TryAnswer;
+  headline: string;
+  explanation?: string;
+  steps: { text: string; action: StepAction }[];
+  stepTimings?: StepTiming[];
+  apiCalls?: ApiCall[];
+  recording?: { encoding: "rrweb+gzip+base64"; events: string };
+  /** The runner could not finish: the try is recorded as errored with this message. */
+  error?: string;
+}
+
+/** POST …/tries/{id}/save — keep a try as a draft scenario of a feature. */
+export interface SaveTryRequest {
+  featureId: string;
+  name: string;
+}
+
+export const TRY_LIMITS = {
+  questionMax: 1000,
+  headlineMax: 300,
+  explanationMax: 4000,
+  /** A try still running after this long is given up as errored. */
+  staleAfterMs: 15 * 60 * 1000,
+  recentMax: 20,
+} as const;
