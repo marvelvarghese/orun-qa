@@ -24,7 +24,7 @@ function Inner({ orgId, orgSlug, hubId }: { orgId: string; orgSlug: string; hubI
   const { client } = useSession();
   const scenarios = useApiQuery(qk.qaScenarios(orgId, hubId), () => wrap(async () => (await client.qa.listScenarios(orgId, hubId)).scenarios));
   const map = useApiQuery(qk.qaMap(orgId, hubId), () => wrap(() => client.qa.getMap(orgId, hubId)));
-  const runs = useApiQuery(qk.qaRuns(orgId, hubId), () => wrap(async () => (await client.qa.listRuns(orgId, hubId, { limit: 1 })).runs));
+  const runs = useApiQuery(qk.qaRuns(orgId, hubId), () => wrap(async () => (await client.qa.listRuns(orgId, hubId, { limit: 5 })).runs));
 
   if (scenarios.loading) {
     return (

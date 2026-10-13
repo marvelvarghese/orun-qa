@@ -203,6 +203,20 @@ export default function QaDemoPage() {
             { kind: "info", label: "Review", text: "Priya added 4 scenarios for Change seats", href: "#" },
           ]}
           lastCheck="today, 09:12"
+          recordings={[
+            {
+              featureId: FEATURES[0]!.id,
+              scenarioId: "scn_demo",
+              scenarioName: "Sign in offers the company login",
+              resultId: "res_demo",
+              recordingId: "rec_demo",
+              verdict: "works",
+              stepTexts: ["Open the sign-in page", "It asks you to sign in", "Your company login is offered"],
+              stepTimings: DEMO_RECORDING_TIMINGS,
+              recordedAt: AT,
+            },
+          ]}
+          loadRecording={async () => DEMO_RECORDING}
           featureHref={() => "#"}
           planHref="#"
           testsHref="#"

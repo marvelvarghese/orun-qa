@@ -259,3 +259,138 @@ export function RecordingPlayer({ load, steps, timings, verdict, failingStep, re
     </>
   );
 }
+
+export interface CardRecordingProps {
+  load: () => Promise<string>;
+  stepTexts: string[];
+  timings: StepTiming[];
+  verdict: Verdict;
+  /** Shown before the recording loads, and if it cannot play. */
+  fallback: React.ReactNode;
+}
+
+/**
+ * A feature card's recording: loaded only once the card is on screen, played
+ * muted and on a loop with the step as its caption, paused while off screen.
+ * With reduced motion it shows the first page and does not play.
+ */
+export function CardRecording({ load, stepTexts, timings, verdict, fallback }: CardRecordingProps) {
+  const frameRef = React.useRef<HTMLDivElement>(null);
+  const winRef = React.useRef<HTMLDivElement>(null);
+  const playerRef = React.useRef<Replayer | null>(null);
+  const [seen, setSeen] = React.useState(false);
+  const [visible, setVisible] = React.useState(false);
+  const [state, setState] = React.useState<"idle" | "ready" | "error">("idle");
+  const [caption, setCaption] = React.useState(stepTexts[0] ?? "");
+  const [total, setTotal] = React.useState(0);
+  const offsetsRef = React.useRef<[number, number][]>([]);
+  const reduced = React.useMemo(() => typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches, []);
+
+  React.useEffect(() => {
+    const el = frameRef.current;
+    if (!el || typeof IntersectionObserver === "undefined") {
+      setSeen(true);
+      setVisible(true);
+      return;
+    }
+    const io = new IntersectionObserver(([e]) => {
+      const on = !!e?.isIntersecting;
+      setVisible(on);
+      if (on) setSeen(true);
+    }, { rootMargin: "120px" });
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+
+  React.useEffect(() => {
+    if (!seen) return;
+    let cancelled = false;
+    let replayer: Replayer | null = null;
+    let observer: ResizeObserver | null = null;
+    (async () => {
+      try {
+        const [{ Replayer: R }, b64] = await Promise.all([import("@rrweb/replay"), load()]);
+        const events = await unpackRecording(b64);
+        if (cancelled || !winRef.current || !events.some((e) => e.type === META)) {
+          if (!cancelled) setState("error");
+          return;
+        }
+        winRef.current.innerHTML = "";
+        replayer = new R(events as never, { root: winRef.current, skipInactive: true, showWarning: false, mouseTail: false, triggerFocus: false, speed: 1.5 }) as unknown as Replayer;
+        playerRef.current = replayer;
+        const fit = () => {
+          const w = winRef.current;
+          const iframe = replayer?.wrapper.querySelector("iframe");
+          if (!w || !iframe || !replayer) return;
+          const vw = Number(iframe.getAttribute("width")) || 1;
+          const vh = Number(iframe.getAttribute("height")) || 1;
+          const s = Math.min(w.clientWidth / vw, w.clientHeight / vh);
+          Object.assign(replayer.wrapper.style, { transform: `scale(${s})`, transformOrigin: "top left", position: "absolute", left: `${(w.clientWidth - vw * s) / 2}px`, top: "0" });
+        };
+        replayer.on("resize", fit);
+        const firstPage = events.find((e) => e.type === 2);
+        const start = firstPage ? firstPage.timestamp - events[0]!.timestamp : 0;
+        // Loop: start again from the first page when it ends.
+        replayer.on("finish", () => window.setTimeout(() => playerRef.current?.play(start), 1200));
+        observer = new ResizeObserver(fit);
+        observer.observe(winRef.current);
+        fit();
+        offsetsRef.current = [...chapterOffsets(events, timings).entries()].sort((a, b) => a[1] - b[1]);
+        setTotal(replayer.getMetaData().totalTime);
+        replayer.pause(start);
+        setState("ready");
+      } catch {
+        if (!cancelled) setState("error");
+      }
+    })();
+    return () => {
+      cancelled = true;
+      observer?.disconnect();
+      replayer?.destroy();
+      playerRef.current = null;
+    };
+    // Loaded once per recording; the parent keys the card by recording id.
+  }, [seen]);
+
+  // Play only while on screen.
+  React.useEffect(() => {
+    const p = playerRef.current;
+    if (!p || state !== "ready" || reduced) return;
+    if (visible) p.play(p.getCurrentTime());
+    else p.pause();
+  }, [visible, state, reduced]);
+
+  // The caption follows the step being shown.
+  React.useEffect(() => {
+    if (state !== "ready" || reduced) return;
+    const id = window.setInterval(() => {
+      const p = playerRef.current;
+      if (!p) return;
+      const now = p.getCurrentTime();
+      let ord: number | null = null;
+      for (const [o, at] of offsetsRef.current) if (at <= now + 1) ord = o;
+      if (ord !== null && stepTexts[ord]) setCaption(stepTexts[ord]!);
+    }, 250);
+    return () => window.clearInterval(id);
+  }, [state, reduced, stepTexts]);
+
+  const failed = verdict === "fails" || verdict === "errored";
+  return (
+    <div ref={frameRef} className={`demo${failed ? " fail" : ""}`} aria-label={`Recording: ${stepTexts.join(", then ")}`} role="img">
+      <div className="win replay-win" ref={winRef} />
+      {state !== "ready" && <div style={{ position: "absolute", inset: 0 }}>{fallback}</div>}
+      {state === "ready" && caption && (
+        <div className="cap">
+          <span>{caption}</span>
+        </div>
+      )}
+      {state === "ready" && <span className="dur">{clock(total)}</span>}
+      {state === "ready" && (
+        <span className="tag">
+          <i />
+          {failed ? "Fails" : "Works"}
+        </span>
+      )}
+    </div>
+  );
+}

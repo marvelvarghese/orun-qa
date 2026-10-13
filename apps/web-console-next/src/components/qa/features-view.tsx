@@ -2,7 +2,8 @@
 
 import * as React from "react";
 import Link from "next/link";
-import type { FeatureHealth, PublicArea, PublicFeature } from "@saas/contracts/qa";
+import type { FeatureRecording, FeatureHealth, PublicArea, PublicFeature } from "@saas/contracts/qa";
+import { CardRecording } from "@/components/qa/replay";
 
 /**
  * The Features home, mirroring the design canvas (Feature catalog · home)
@@ -42,12 +43,16 @@ export interface FeaturesViewProps {
   /** On Orun QA's own hub, a way to (re)load its features from the manifest. Always offered there, so a partial import can be finished. */
   onImportSelf?: (() => void) | undefined;
   importing?: boolean;
+  /** Each feature's card recording, and how to fetch one; a card without one shows the empty frame. */
+  recordings?: FeatureRecording[];
+  loadRecording?: (recordingId: string) => Promise<string>;
   /** Scenarios arrive in QA2; until then the console hides "Add a scenario". */
   showAddScenario?: boolean;
 }
 
-export function FeaturesView({ productName, features, areas, needsYou, lastCheck, featureHref, planHref, testsHref, onAddFeature, onImportSelf, importing = false, showAddScenario = false }: FeaturesViewProps) {
+export function FeaturesView({ productName, features, areas, needsYou, lastCheck, featureHref, planHref, testsHref, onAddFeature, onImportSelf, importing = false, showAddScenario = false, recordings = [], loadRecording }: FeaturesViewProps) {
   const [filter, setFilter] = React.useState<FeatureHealth | "all">("all");
+  const recordingOf = React.useMemo(() => new Map(recordings.map((r) => [r.featureId, r])), [recordings]);
   const [query, setQuery] = React.useState("");
 
   const counts = ORDER.reduce((acc, h) => ({ ...acc, [h]: features.filter((f) => f.health === h).length }), {} as Record<FeatureHealth, number>);
@@ -183,7 +188,7 @@ export function FeaturesView({ productName, features, areas, needsYou, lastCheck
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(290px, 100%), 1fr))", gap: 20 }}>
               {g.items.map((f) => (
-                <FeatureCard key={f.id} feature={f} href={featureHref(f.id)} />
+                <FeatureCard key={f.id} feature={f} href={featureHref(f.id)} recording={recordingOf.get(f.id)} loadRecording={loadRecording} />
               ))}
             </div>
           </section>
@@ -222,11 +227,22 @@ export function RecordingFrame({ big = false, caption }: { big?: boolean; captio
   );
 }
 
-function FeatureCard({ feature: f, href }: { feature: PublicFeature; href: string }) {
+function FeatureCard({ feature: f, href, recording, loadRecording }: { feature: PublicFeature; href: string; recording?: FeatureRecording | undefined; loadRecording?: ((id: string) => Promise<string>) | undefined }) {
   const pill = HEALTH_PILL[f.health];
   return (
     <Link href={href} className="card" style={{ display: "flex", flexDirection: "column", textDecoration: "none", color: "#171717", overflow: "hidden", padding: 8 }}>
-      <RecordingFrame />
+      {recording && loadRecording ? (
+        <CardRecording
+          key={recording.recordingId}
+          load={() => loadRecording(recording.recordingId)}
+          stepTexts={recording.stepTexts}
+          timings={recording.stepTimings}
+          verdict={recording.verdict}
+          fallback={<RecordingFrame caption="Loading the recording…" />}
+        />
+      ) : (
+        <RecordingFrame />
+      )}
       <div style={{ padding: "14px 8px 8px", display: "flex", flexDirection: "column", gap: 8, flex: "1 1 auto" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
           <span style={{ fontWeight: 700, fontSize: 17 }}>{f.name}</span>

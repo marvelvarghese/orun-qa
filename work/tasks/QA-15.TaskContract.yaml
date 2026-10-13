@@ -1,0 +1,17 @@
+apiVersion: orun.io/v1
+kind: TaskContract
+metadata:
+  name: QA-15
+spec:
+  goal: Each feature card on the features home plays the newest recording of one of its approved scenarios — loaded when the card scrolls into view, muted and looping, with the step on screen as its caption.
+  affects:
+    - default/orun-qa/qa-worker
+    - default/orun-qa/qa-worker-tests
+    - default/orun-qa/db
+    - default/orun-qa/contracts
+    - default/orun-qa/web-console-next
+  doneWhen:
+    - the map carries each feature's card recording, never from a draft scenario or a try
+    - a card with a recording plays it on the features home; a card without one shows the empty frame
+    - the features home says when the last full check ran
+  gates: []

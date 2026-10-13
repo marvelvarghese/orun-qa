@@ -499,6 +499,10 @@ describe("qa-worker", () => {
     const one = await t.call("GET", `${hub}/features/${ids.Import}`);
     expect(one.data!.feature.health).toBe("broken");
 
+    // The Map card plays its recording; Import's newest result has none, so its card has nothing.
+    const cards = map.data!.recordings;
+    expect(cards.map((c: any) => [c.featureId, c.recordingId, c.verdict, c.scenarioName])).toEqual([[ids.Map, works.data!.result.recordingId, "works", "Opens the map"]]);
+    expect(cards[0].stepTexts).toEqual(goodSteps.map((s) => s.text));
     const rec = await t.call("GET", `${hub}/recordings/${works.data!.result.recordingId}`);
     expect(rec.status).toBe(200);
     expect(rec.data!.recording.events).toBe(events);

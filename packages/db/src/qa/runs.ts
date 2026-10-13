@@ -96,6 +96,18 @@ export interface Recording {
   createdAt: Date;
 }
 
+/** The recording a feature card plays. */
+export interface FeatureRecordingRow {
+  featureId: string;
+  scenarioId: string;
+  scenarioName: string;
+  resultId: string;
+  recordingId: string;
+  verdict: Verdict;
+  stepTimings: StepTiming[];
+  createdAt: Date;
+}
+
 /** What feature health is computed from: one verdict per approved scenario. */
 export interface HealthVerdict {
   featureId: string;
@@ -182,6 +194,12 @@ export interface QaRunsRepository {
    * results recorded since it was approved, and never from a "try" run.
    */
   healthVerdicts(orgId: string, hubId: string): Promise<QaResult<HealthVerdict[]>>;
+
+  /**
+   * Per feature, the newest recorded result of an approved scenario since its
+   * approval, never from a "try" run — what the feature's card plays.
+   */
+  featureRecordings(orgId: string, hubId: string): Promise<QaResult<FeatureRecordingRow[]>>;
 
   /** A recording, only when its result's run belongs to the hub. */
   getRecording(orgId: string, hubId: string, id: string): Promise<QaResult<Recording>>;
@@ -557,6 +575,37 @@ export function createQaRunsRepository(executor: SqlExecutor | TransactionalSqlE
           [orgId, hubId],
         );
         return { ok: true, value: r.rows.map((x) => ({ scenarioId: x.scenario_id as string, featureId: x.feature_id as string, verdict: x.verdict as Verdict })) };
+      });
+    },
+
+    featureRecordings(orgId, hubId) {
+      return guard("recording", async () => {
+        const r = await executor.execute<Row>(
+          `SELECT DISTINCT ON (r.feature_id) r.feature_id, r.scenario_id, s.name AS scenario_name, r.id AS result_id,
+                  rec.id AS recording_id, r.verdict, r.step_timings, r.created_at
+             FROM qa.results r
+             JOIN qa.recordings rec ON rec.org_id = r.org_id AND rec.result_id = r.id
+             JOIN qa.scenarios s ON s.org_id = r.org_id AND s.id = r.scenario_id
+             JOIN qa.runs run ON run.org_id = r.org_id AND run.id = r.run_id
+            WHERE r.org_id = $1 AND s.hub_id = $2 AND s.state = 'approved'
+              AND s.approved_at IS NOT NULL AND r.created_at >= s.approved_at
+              AND run.trigger <> 'try'
+            ORDER BY r.feature_id, r.created_at DESC, r.id DESC`,
+          [orgId, hubId],
+        );
+        return {
+          ok: true,
+          value: r.rows.map((x) => ({
+            featureId: x.feature_id as string,
+            scenarioId: x.scenario_id as string,
+            scenarioName: x.scenario_name as string,
+            resultId: x.result_id as string,
+            recordingId: x.recording_id as string,
+            verdict: x.verdict as Verdict,
+            stepTimings: json<StepTiming[]>(x.step_timings, []),
+            createdAt: iso(x.created_at),
+          })),
+        };
       });
     },
 

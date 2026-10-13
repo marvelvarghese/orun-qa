@@ -52,6 +52,24 @@ export interface FeatureMap {
   areas: PublicArea[];
   features: PublicFeature[];
   edges: PublicFeatureEdge[];
+  /** The recording each feature card plays: one per feature that has one (QA2). */
+  recordings: FeatureRecording[];
+}
+
+/**
+ * A feature's card recording: the newest recorded result of one of its
+ * approved scenarios since that scenario's approval — never a try.
+ */
+export interface FeatureRecording {
+  featureId: string; // feat_…
+  scenarioId: string; // scn_…
+  scenarioName: string;
+  resultId: string; // res_…
+  recordingId: string; // rec_…
+  verdict: Verdict;
+  stepTexts: string[];
+  stepTimings: StepTiming[];
+  recordedAt: string;
 }
 
 /** What breaks when a feature breaks, and what it relies on. Computed from confirmed edges. */
