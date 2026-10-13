@@ -262,57 +262,113 @@ export function RecordingPlayer({ load, steps, timings, verdict, failingStep, re
 
 export interface CardRecordingProps {
   load: () => Promise<string>;
+  scenarioName: string;
   stepTexts: string[];
   timings: StepTiming[];
   verdict: Verdict;
-  /** Shown before the recording loads, and if it cannot play. */
-  fallback: React.ReactNode;
+  /** Shown before the recording plays, and when it cannot. */
+  fallback: (state: "loading" | "unavailable") => React.ReactNode;
 }
 
+/** Cards load one or two recordings at a time, so a long home does not fetch them all at once. */
+const cardLoads = { active: 0, queue: [] as (() => void)[] };
+function cardSlot(): Promise<() => void> {
+  return new Promise((resolve) => {
+    const take = () => {
+      cardLoads.active++;
+      let done = false;
+      resolve(() => {
+        if (done) return;
+        done = true;
+        cardLoads.active--;
+        cardLoads.queue.shift()?.();
+      });
+    };
+    if (cardLoads.active < 2) take();
+    else cardLoads.queue.push(take);
+  });
+}
+
+/** A card off screen this long lets its replay go, freeing the rebuilt page and its events. */
+const UNLOAD_AFTER_MS = 20_000;
+
 /**
- * A feature card's recording: loaded only once the card is on screen, played
- * muted and on a loop with the step as its caption, paused while off screen.
- * With reduced motion it shows the first page and does not play.
+ * A feature card's recording: loaded once the card is near the screen, played
+ * muted on a loop with the step as its caption, paused off screen and let go
+ * after a while there. With reduced motion it shows the first page and stays.
+ * It is decoration inside the card's link: hidden from assistive technology and
+ * never focusable.
  */
-export function CardRecording({ load, stepTexts, timings, verdict, fallback }: CardRecordingProps) {
+export function CardRecording({ load, scenarioName, stepTexts, timings, verdict, fallback }: CardRecordingProps) {
   const frameRef = React.useRef<HTMLDivElement>(null);
   const winRef = React.useRef<HTMLDivElement>(null);
   const playerRef = React.useRef<Replayer | null>(null);
-  const [seen, setSeen] = React.useState(false);
+  const visibleRef = React.useRef(false);
+  const loopTimer = React.useRef<number | null>(null);
+  const [wanted, setWanted] = React.useState(false);
   const [visible, setVisible] = React.useState(false);
   const [state, setState] = React.useState<"idle" | "ready" | "error">("idle");
   const [caption, setCaption] = React.useState(stepTexts[0] ?? "");
   const [total, setTotal] = React.useState(0);
   const offsetsRef = React.useRef<[number, number][]>([]);
+  const startRef = React.useRef(0);
   const reduced = React.useMemo(() => typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches, []);
 
+  const clearLoop = () => {
+    if (loopTimer.current !== null) window.clearTimeout(loopTimer.current);
+    loopTimer.current = null;
+  };
+
+  // Near the screen: load (and play). Far from it for a while: let the replay go.
   React.useEffect(() => {
     const el = frameRef.current;
     if (!el || typeof IntersectionObserver === "undefined") {
-      setSeen(true);
+      visibleRef.current = true;
       setVisible(true);
+      setWanted(true);
       return;
     }
-    const io = new IntersectionObserver(([e]) => {
-      const on = !!e?.isIntersecting;
-      setVisible(on);
-      if (on) setSeen(true);
-    }, { rootMargin: "120px" });
+    let unload: number | null = null;
+    const io = new IntersectionObserver(
+      ([e]) => {
+        const on = !!e?.isIntersecting;
+        visibleRef.current = on;
+        setVisible(on);
+        if (unload !== null) window.clearTimeout(unload);
+        unload = null;
+        if (on) setWanted(true);
+        else unload = window.setTimeout(() => setWanted(false), UNLOAD_AFTER_MS);
+      },
+      { rootMargin: "200px" },
+    );
     io.observe(el);
-    return () => io.disconnect();
+    return () => {
+      io.disconnect();
+      if (unload !== null) window.clearTimeout(unload);
+    };
   }, []);
 
   React.useEffect(() => {
-    if (!seen) return;
+    if (!wanted) return;
     let cancelled = false;
     let replayer: Replayer | null = null;
     let observer: ResizeObserver | null = null;
+    let release: (() => void) | null = null;
     (async () => {
       try {
+        release = await cardSlot();
+        // Cancelled while waiting for a slot: hand it straight back.
+        if (cancelled) {
+          release();
+          return;
+        }
         const [{ Replayer: R }, b64] = await Promise.all([import("@rrweb/replay"), load()]);
         const events = await unpackRecording(b64);
-        if (cancelled || !winRef.current || !events.some((e) => e.type === META)) {
-          if (!cancelled) setState("error");
+        release();
+        if (cancelled) return;
+        if (!winRef.current || !events.some((e) => e.type === META)) {
+          console.warn("A card recording has no page to show");
+          setState("error");
           return;
         }
         winRef.current.innerHTML = "";
@@ -322,6 +378,7 @@ export function CardRecording({ load, stepTexts, timings, verdict, fallback }: C
           const w = winRef.current;
           const iframe = replayer?.wrapper.querySelector("iframe");
           if (!w || !iframe || !replayer) return;
+          iframe.setAttribute("tabindex", "-1");
           const vw = Number(iframe.getAttribute("width")) || 1;
           const vh = Number(iframe.getAttribute("height")) || 1;
           const s = Math.min(w.clientWidth / vw, w.clientHeight / vh);
@@ -329,56 +386,75 @@ export function CardRecording({ load, stepTexts, timings, verdict, fallback }: C
         };
         replayer.on("resize", fit);
         const firstPage = events.find((e) => e.type === 2);
-        const start = firstPage ? firstPage.timestamp - events[0]!.timestamp : 0;
-        // Loop: start again from the first page when it ends.
-        replayer.on("finish", () => window.setTimeout(() => playerRef.current?.play(start), 1200));
+        startRef.current = firstPage ? firstPage.timestamp - events[0]!.timestamp : 0;
+        // Loop from the first page — but only while the card is on screen.
+        replayer.on("finish", () => {
+          clearLoop();
+          loopTimer.current = window.setTimeout(() => {
+            loopTimer.current = null;
+            if (visibleRef.current) playerRef.current?.play(startRef.current);
+          }, 1200);
+        });
         observer = new ResizeObserver(fit);
         observer.observe(winRef.current);
         fit();
         offsetsRef.current = [...chapterOffsets(events, timings).entries()].sort((a, b) => a[1] - b[1]);
         setTotal(replayer.getMetaData().totalTime);
-        replayer.pause(start);
+        replayer.pause(startRef.current);
+        setCaption(stepTexts[0] ?? "");
         setState("ready");
-      } catch {
-        if (!cancelled) setState("error");
+      } catch (err) {
+        release?.();
+        if (!cancelled) {
+          console.warn("A card recording could not be played", err);
+          setState("error");
+        }
       }
     })();
     return () => {
       cancelled = true;
+      release?.();
+      clearLoop();
       observer?.disconnect();
       replayer?.destroy();
       playerRef.current = null;
+      if (winRef.current) winRef.current.innerHTML = "";
+      setState((s) => (s === "error" ? s : "idle"));
     };
-    // Loaded once per recording; the parent keys the card by recording id.
-  }, [seen]);
+    // Loaded once per recording while wanted; the parent keys the card by recording id.
+  }, [wanted]);
 
   // Play only while on screen.
   React.useEffect(() => {
     const p = playerRef.current;
     if (!p || state !== "ready" || reduced) return;
     if (visible) p.play(p.getCurrentTime());
-    else p.pause();
+    else {
+      clearLoop();
+      p.pause();
+    }
   }, [visible, state, reduced]);
 
-  // The caption follows the step being shown.
+  // The caption follows the step being shown, while it plays.
   React.useEffect(() => {
-    if (state !== "ready" || reduced) return;
+    if (state !== "ready" || reduced || !visible) return;
     const id = window.setInterval(() => {
       const p = playerRef.current;
       if (!p) return;
       const now = p.getCurrentTime();
       let ord: number | null = null;
       for (const [o, at] of offsetsRef.current) if (at <= now + 1) ord = o;
-      if (ord !== null && stepTexts[ord]) setCaption(stepTexts[ord]!);
+      setCaption((ord !== null ? stepTexts[ord] : undefined) ?? stepTexts[0] ?? "");
     }, 250);
     return () => window.clearInterval(id);
-  }, [state, reduced, stepTexts]);
+  }, [state, reduced, visible, stepTexts]);
 
   const failed = verdict === "fails" || verdict === "errored";
+  const tag = failed ? "Fails" : verdict === "works" ? "Works" : "Recorded";
   return (
-    <div ref={frameRef} className={`demo${failed ? " fail" : ""}`} aria-label={`Recording: ${stepTexts.join(", then ")}`} role="img">
-      <div className="win replay-win" ref={winRef} />
-      {state !== "ready" && <div style={{ position: "absolute", inset: 0 }}>{fallback}</div>}
+    <div ref={frameRef} className={`demo${failed ? " fail" : ""}`} aria-hidden="true" title={`Recording: ${scenarioName}`}>
+      <div className="win replay-win" ref={winRef} inert />
+      {state !== "ready" && <div style={{ position: "absolute", inset: 0 }}>{fallback(state === "error" ? "unavailable" : "loading")}</div>}
       {state === "ready" && caption && (
         <div className="cap">
           <span>{caption}</span>
@@ -388,7 +464,7 @@ export function CardRecording({ load, stepTexts, timings, verdict, fallback }: C
       {state === "ready" && (
         <span className="tag">
           <i />
-          {failed ? "Fails" : "Works"}
+          {tag}
         </span>
       )}
     </div>

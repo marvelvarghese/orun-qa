@@ -196,8 +196,9 @@ export interface QaRunsRepository {
   healthVerdicts(orgId: string, hubId: string): Promise<QaResult<HealthVerdict[]>>;
 
   /**
-   * Per feature, the newest recorded result of an approved scenario since its
-   * approval, never from a "try" run — what the feature's card plays.
+   * Per feature, what its card plays: among its approved scenarios' newest
+   * results since approval (never a "try"), those that were recorded — a
+   * failing one first, else the newest.
    */
   featureRecordings(orgId: string, hubId: string): Promise<QaResult<FeatureRecordingRow[]>>;
 
@@ -581,16 +582,24 @@ export function createQaRunsRepository(executor: SqlExecutor | TransactionalSqlE
     featureRecordings(orgId, hubId) {
       return guard("recording", async () => {
         const r = await executor.execute<Row>(
-          `SELECT DISTINCT ON (r.feature_id) r.feature_id, r.scenario_id, s.name AS scenario_name, r.id AS result_id,
-                  rec.id AS recording_id, r.verdict, r.step_timings, r.created_at
-             FROM qa.results r
-             JOIN qa.recordings rec ON rec.org_id = r.org_id AND rec.result_id = r.id
-             JOIN qa.scenarios s ON s.org_id = r.org_id AND s.id = r.scenario_id
-             JOIN qa.runs run ON run.org_id = r.org_id AND run.id = r.run_id
-            WHERE r.org_id = $1 AND s.hub_id = $2 AND s.state = 'approved'
-              AND s.approved_at IS NOT NULL AND r.created_at >= s.approved_at
-              AND run.trigger <> 'try'
-            ORDER BY r.feature_id, r.created_at DESC, r.id DESC`,
+          // The newest result of each approved scenario (the one health reads) — kept
+          // only if it was recorded, so a card never shows an older pass than the
+          // verdict on its pill. Per feature, a failing recording wins over a passing one.
+          `SELECT DISTINCT ON (latest.feature_id) latest.*
+             FROM (
+               SELECT DISTINCT ON (r.scenario_id) r.feature_id, r.scenario_id, s.name AS scenario_name, r.id AS result_id,
+                      rec.id AS recording_id, r.verdict, r.step_timings, r.created_at
+                 FROM qa.results r
+                 JOIN qa.scenarios s ON s.org_id = r.org_id AND s.id = r.scenario_id
+                 JOIN qa.runs run ON run.org_id = r.org_id AND run.id = r.run_id
+                 LEFT JOIN qa.recordings rec ON rec.org_id = r.org_id AND rec.result_id = r.id
+                WHERE r.org_id = $1 AND s.hub_id = $2 AND s.state = 'approved'
+                  AND s.approved_at IS NOT NULL AND r.created_at >= s.approved_at
+                  AND run.trigger <> 'try'
+                ORDER BY r.scenario_id, r.created_at DESC, r.id DESC
+             ) latest
+            WHERE latest.recording_id IS NOT NULL
+            ORDER BY latest.feature_id, (latest.verdict IN ('fails', 'errored')) DESC, latest.created_at DESC, latest.result_id DESC`,
           [orgId, hubId],
         );
         return {

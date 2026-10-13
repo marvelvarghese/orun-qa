@@ -215,12 +215,13 @@ describe("qa-worker", () => {
     expect(map.data!.edges.every((e: any) => e.confirmed && e.source === "human")).toBe(true);
 
     const archive = await t.call("GET", `/v1/organizations/${ORG}/qa/hubs/${hubId}/features/${ids["Archive a project"]}`);
-    expect(archive.data!.ripple).toEqual({
-      feature: ids["Archive a project"],
-      reliesOn: [ids["Create a project"]],
-      breaksDirectly: [ids["Task board"], ids["Activity feed"]],
-      breaksNext: [ids["Weekly digest email"]],
-    });
+    // The ripple lists are sets: edges made in the same millisecond come back in either order.
+    const ripple = archive.data!.ripple;
+    const sorted = (xs: string[]) => [...xs].sort();
+    expect(ripple.feature).toBe(ids["Archive a project"]);
+    expect(sorted(ripple.reliesOn)).toEqual(sorted([ids["Create a project"]!]));
+    expect(sorted(ripple.breaksDirectly)).toEqual(sorted([ids["Task board"]!, ids["Activity feed"]!]));
+    expect(sorted(ripple.breaksNext)).toEqual(sorted([ids["Weekly digest email"]!]));
 
     // Archiving a feature takes it, and its edges, off the map.
     await t.call("PATCH", `/v1/organizations/${ORG}/qa/hubs/${hubId}/features/${ids["Activity feed"]}`, { status: "archived" });
@@ -524,6 +525,22 @@ describe("qa-worker", () => {
     await t.call("POST", `${hub}/runs/${run2.data!.run.id}/finish`, {});
     map = await t.call("GET", `${hub}/map`);
     expect(map.data!.features.map((f: any) => f.health)).toEqual(["verified", "verified"]);
+    // A newer result without a recording takes the old card away rather than leave a stale one;
+    // a failing recording wins over a passing one of the same feature.
+    const run3 = await t.call("POST", `${hub}/runs`, { trigger: "schedule" });
+    await t.call("POST", `${hub}/runs/${run3.data!.run.id}/results`, { scenarioId: mapScn, verdict: "works", durationMs: 5 });
+    await t.call("POST", `${hub}/runs/${run3.data!.run.id}/finish`, {});
+    expect((await t.call("GET", `${hub}/map`)).data!.recordings).toEqual([]);
+    const second = await approvedScenario(t, hubId, ids.Map!, "Map, second look");
+    const run4 = await t.call("POST", `${hub}/runs`, { trigger: "schedule" });
+    const rec4 = { encoding: "rrweb+gzip+base64", events };
+    const passRec = await t.call("POST", `${hub}/runs/${run4.data!.run.id}/results`, { scenarioId: mapScn, verdict: "works", durationMs: 5, recording: rec4 });
+    const failRec = await t.call("POST", `${hub}/runs/${run4.data!.run.id}/results`, { scenarioId: second, verdict: "fails", failingStep: 0, durationMs: 5, recording: rec4 });
+    expect(passRec.status).toBe(201);
+    await t.call("POST", `${hub}/runs/${run4.data!.run.id}/finish`, {});
+    const cardsNow = (await t.call("GET", `${hub}/map`)).data!.recordings;
+    expect(cardsNow.map((c: any) => [c.recordingId, c.verdict])).toEqual([[failRec.data!.result.recordingId, "fails"]]);
+    await t.call("PATCH", `${hub}/scenarios/${second}`, { state: "archived" });
     t.state.role = "builder";
     expect((await t.call("PATCH", `${hub}/scenarios/${mapScn}`, { state: "quarantined" })).status).toBe(404);
     t.state.role = "owner";

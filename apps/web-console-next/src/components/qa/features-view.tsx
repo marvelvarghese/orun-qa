@@ -235,10 +235,11 @@ function FeatureCard({ feature: f, href, recording, loadRecording }: { feature: 
         <CardRecording
           key={recording.recordingId}
           load={() => loadRecording(recording.recordingId)}
+          scenarioName={recording.scenarioName}
           stepTexts={recording.stepTexts}
           timings={recording.stepTimings}
           verdict={recording.verdict}
-          fallback={<RecordingFrame caption="Loading the recording…" />}
+          fallback={(st) => (st === "loading" ? <RecordingFrame caption="Loading the recording…" /> : <RecordingFrame />)}
         />
       ) : (
         <RecordingFrame />
