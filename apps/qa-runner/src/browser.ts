@@ -58,14 +58,14 @@ export function plainReason(err: unknown): string {
   return first.endsWith(".") ? first : `${first}.`;
 }
 
-function locate(page: Page, a: { text?: string; testId?: string; role?: string; label?: string }): Locator {
+export function locate(page: Page, a: { text?: string; testId?: string; role?: string; label?: string }): Locator {
   if (a.testId) return page.getByTestId(a.testId).first();
   if (a.label) return page.getByLabel(a.label).first();
   if (a.role) return page.getByRole(a.role as Parameters<Page["getByRole"]>[0], a.text ? { name: a.text } : {}).first();
   return page.getByText(a.text ?? "", { exact: true }).first();
 }
 
-async function perform(page: Page, action: StepAction, vars: PathVars, session: ConsoleSession, calls: ApiCall[]): Promise<void> {
+export async function perform(page: Page, action: StepAction, vars: PathVars, session: ConsoleSession, calls: ApiCall[]): Promise<void> {
   switch (action.type) {
     case "goto":
       await page.goto(new URL(fillPath(action.path, vars), session.consoleUrl).toString(), { waitUntil: "domcontentloaded", timeout: STEP_TIMEOUT });
@@ -124,42 +124,51 @@ export function withMarkers(raw: string[], t0: number, timings: StepTiming[], du
     .map((x) => x.e);
 }
 
-export async function runScenario(browser: Browser, scenario: PublicScenario, vars: PathVars, session: ConsoleSession): Promise<ScenarioOutcome> {
+export interface RecordedPage {
+  page: Page;
+  /** The API calls the page has made so far. */
+  calls: ApiCall[];
+  /** Set once the recorder fails inside the page. */
+  recorderError: () => string;
+  /** Close the page; returns the rrweb events recorded. */
+  close: () => Promise<string[]>;
+}
+
+/**
+ * A fresh browser page on the console: signed in with the runner's token (or
+ * as a visitor, with none), recording the DOM with rrweb when asked, and noting
+ * every call it makes to the API.
+ */
+export async function openRecordedPage(browser: Browser, session: ConsoleSession, opts: { signedIn: boolean; record: boolean }): Promise<RecordedPage> {
   const context = await browser.newContext({ viewport: { width: 1360, height: 860 } });
   const events: string[] = [];
   const calls: ApiCall[] = [];
-  const timings: StepTiming[] = [];
-  const t0 = Date.now();
   let closed = false;
   let recorderError = "";
-  let verdict: Verdict = "works";
-  let failingStep: number | null = null;
-  let message = "";
-
   try {
-    // The console keeps its session in localStorage: hand it the runner's token.
-    // Only the console's own top-level documents get it — never a frame or another origin.
-    await context.addInitScript(
-      ({ prefix, token, origin }) => {
-        if (window.top !== window || location.origin !== origin) return;
-        try {
-          window.localStorage.setItem(`${prefix}.token`, token);
-          window.localStorage.setItem(`${prefix}.target`, "stage");
-        } catch {
-          /* storage unavailable: the scenario will fail at its first check */
-        }
-      },
-      { prefix: session.storagePrefix, token: session.token, origin: new URL(session.consoleUrl).origin },
-    );
-    const record = scenario.kind === "screens_apis";
-    if (record) {
+    if (opts.signedIn) {
+      // The console keeps its session in localStorage: hand it the runner's token.
+      // Only the console's own top-level documents get it — never a frame or another origin.
+      await context.addInitScript(
+        ({ prefix, token, origin }) => {
+          if (window.top !== window || location.origin !== origin) return;
+          try {
+            window.localStorage.setItem(`${prefix}.token`, token);
+            window.localStorage.setItem(`${prefix}.target`, "stage");
+          } catch {
+            /* storage unavailable: the first check will fail */
+          }
+        },
+        { prefix: session.storagePrefix, token: session.token, origin: new URL(session.consoleUrl).origin },
+      );
+    }
+    if (opts.record) {
       await context.exposeBinding("__qaEmit", (_src, e: string) => {
         events.push(e);
       });
       // Run the UMD build with `this` bound to window so it defines window.rrwebRecord.
       await context.addInitScript({ content: `(function () {\n${RRWEB_RECORD}\n}).call(window);\n${START_RECORDING}` });
     }
-
     const page = await context.newPage();
     page.on("pageerror", (e) => {
       if (!recorderError && /rrweb|__qaEmit/.test(String(e))) recorderError = ` (recorder: ${String(e).slice(0, 200)})`;
@@ -179,11 +188,53 @@ export async function runScenario(browser: Browser, scenario: PublicScenario, va
     page.on("requestfailed", (req) => {
       if (new URL(req.url()).origin === apiOrigin && req.method() !== "OPTIONS") calls.push({ method: req.method(), path: pathOf(req.url()), status: 0, ms: 0 });
     });
+    return {
+      page,
+      calls,
+      recorderError: () => recorderError,
+      close: async () => {
+        // Let the last frames reach the recording.
+        await page.waitForTimeout(600).catch(() => undefined);
+        closed = true;
+        await context.close().catch(() => undefined);
+        return events;
+      },
+    };
+  } catch (err) {
+    closed = true;
+    await context.close().catch(() => undefined);
+    throw err;
+  }
+}
 
+/** gzip + base64 the events with step marks; null (and a note) when there are none or too many. */
+export function packRecording(events: string[], t0: number, timings: StepTiming[], durationMs: number): { recording: string | null; note: string } {
+  if (events.length === 0) return { recording: null, note: "" };
+  const packed = gzipSync(Buffer.from(JSON.stringify(withMarkers(events, t0, timings, durationMs)))).toString("base64");
+  if (packed.length <= RUN_LIMITS.recordingMax) return { recording: packed, note: "" };
+  return { recording: null, note: ` (recording dropped: ${Math.round(packed.length / 1e6)} MB is over the limit)` };
+}
+
+/** API calls trimmed to what the API accepts. */
+export const boundedCalls = (calls: ApiCall[]): ApiCall[] =>
+  calls.slice(0, RUN_LIMITS.apiCallsMax).map((c) => ({ ...c, method: c.method.slice(0, 10), path: c.path.slice(0, 300), ms: Math.min(c.ms, RUN_LIMITS.durationMax) }));
+
+export async function runScenario(browser: Browser, scenario: PublicScenario, vars: PathVars, session: ConsoleSession): Promise<ScenarioOutcome> {
+  const timings: StepTiming[] = [];
+  const t0 = Date.now();
+  let verdict: Verdict = "works";
+  let failingStep: number | null = null;
+  let message = "";
+  let opened: RecordedPage | null = null;
+  let events: string[] = [];
+
+  try {
+    // A scenario written for a visitor runs signed out.
+    opened = await openRecordedPage(browser, session, { signedIn: scenario.asRole !== "visitor", record: scenario.kind === "screens_apis" });
     for (const step of scenario.steps) {
       const start = Date.now() - t0;
       try {
-        await perform(page, step.action, vars, session, calls);
+        await perform(opened.page, step.action, vars, session, opened.calls);
         timings.push({ ord: step.ord, startMs: start, endMs: Date.now() - t0, ok: true });
       } catch (err) {
         timings.push({ ord: step.ord, startMs: start, endMs: Date.now() - t0, ok: false });
@@ -193,23 +244,18 @@ export async function runScenario(browser: Browser, scenario: PublicScenario, va
         break;
       }
     }
-    // Let the last frames reach the recording.
-    await page.waitForTimeout(600).catch(() => undefined);
   } catch (err) {
     verdict = "errored";
     message = `The runner could not run this scenario: ${err instanceof Error ? err.message : String(err)}`;
   } finally {
-    closed = true;
-    await context.close().catch(() => undefined);
+    if (opened) events = await opened.close();
   }
   const durationMs = Date.now() - t0;
-
-  let recording: string | null = null;
-  if (events.length > 0) {
-    const packed = gzipSync(Buffer.from(JSON.stringify(withMarkers(events, t0, timings, durationMs)))).toString("base64");
-    if (packed.length <= RUN_LIMITS.recordingMax) recording = packed;
-    else message = `${message} (recording dropped: ${Math.round(packed.length / 1e6)} MB is over the limit)`;
-  }
+  const packed = packRecording(events, t0, timings, durationMs);
+  const recording = packed.recording;
+  message += packed.note;
+  const calls = opened?.calls ?? [];
+  const recorderError = opened?.recorderError() ?? "";
 
   return {
     verdict,
@@ -217,7 +263,7 @@ export async function runScenario(browser: Browser, scenario: PublicScenario, va
     message: `${message}${recorderError}`.trim().slice(0, RUN_LIMITS.messageMax),
     durationMs: Math.min(durationMs, RUN_LIMITS.durationMax),
     stepTimings: timings.map((t) => ({ ...t, endMs: Math.min(t.endMs, RUN_LIMITS.durationMax), startMs: Math.min(t.startMs, RUN_LIMITS.durationMax) })),
-    apiCalls: calls.slice(0, RUN_LIMITS.apiCallsMax).map((c) => ({ ...c, method: c.method.slice(0, 10), path: c.path.slice(0, 300), ms: Math.min(c.ms, RUN_LIMITS.durationMax) })),
+    apiCalls: boundedCalls(calls),
     recording,
   };
 }

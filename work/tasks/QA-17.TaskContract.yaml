@@ -1,0 +1,15 @@
+apiVersion: orun.io/v1
+kind: TaskContract
+metadata:
+  name: QA-17
+spec:
+  goal: The runner answers tries — Claude works through each queued question on stage in a real browser, through tools that are exactly the scenario step types, and the runner posts its answer, the steps that worked, the API calls and an rrweb recording; started at once by the try workflow, or by the scheduled run.
+  affects:
+    - default/orun-qa/qa-runner
+    - .github/workflows/qa-try.yml
+    - .github/workflows/qa-run.yml
+  doneWhen:
+    - a dispatched try workflow claims the queued tries and answers each within a few minutes
+    - every step the AI took that worked is a valid scenario step, with ids written as placeholders
+    - a try that cannot be answered — no AI key, a refusal, a timeout — is answered with why, never left running
+  gates: []

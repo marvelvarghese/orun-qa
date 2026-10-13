@@ -102,3 +102,42 @@ group("coverage", () => {
     expect(ORUN_QA_SELF.features.filter((f) => !covered.has(f.name.toLowerCase())).map((f) => f.name)).toEqual([]);
   });
 });
+
+import { templated, toAction, tryBrief, TRY_TOOLS } from "./try.js";
+import { STEP_ACTION_TYPES as TYPES } from "@saas/contracts/qa";
+
+group("try a scenario", () => {
+  const feats = [{ id: "feat_abc", name: "Feature page" }] as never[];
+  const v: PathVars = { org: "personal-usr-1", orgId: "org_1", hub: "hub_1", features: new Map() };
+
+  it("saves concrete paths as placeholders, so a scenario keeps working", () => {
+    expect(templated("/orgs/personal-usr-1/features/feat_abc?hub=hub_1", v, feats)).toBe("/orgs/{org}/features/{feature:Feature page}?hub={hub}");
+    expect(templated("/v1/organizations/org_1/qa/hubs/hub_1/map", v, feats)).toBe("/v1/organizations/{orgId}/qa/hubs/{hub}/map");
+  });
+
+  it("turns each acting tool into a scenario step, and reading or finishing into none", () => {
+    expect(toAction("click", { text: "Archive", role: "any", step: "x" })).toEqual({ type: "click", text: "Archive" });
+    expect(toAction("click", { text: "Archive", role: "button", step: "x" })).toEqual({ type: "click", text: "Archive", role: "button" });
+    expect(toAction("check_api", { method: "GET", path: "/v1/x", status: 200, step: "x" })).toEqual({ type: "expect_response", method: "GET", path: "/v1/x", status: 200 });
+    expect(toAction("read_page", {})).toBeNull();
+    expect(toAction("finish", { answer: "yes" })).toBeNull();
+    for (const t of TRY_TOOLS) {
+      const a = toAction(t.name, { path: "/", text: "t", role: "any", label: "l", value: "v", key: "Enter", method: "GET", status: 200 });
+      if (a) expect((TYPES as readonly string[]).includes(a.type)).toBe(true);
+    }
+  });
+
+  it("gives every tool a strict schema the API accepts", () => {
+    for (const t of TRY_TOOLS) {
+      expect(t.strict).toBe(true);
+      const schema = t.input_schema as { additionalProperties?: boolean; required?: string[]; properties?: Record<string, unknown> };
+      expect(schema.additionalProperties).toBe(false);
+      expect([...(schema.required ?? [])].sort()).toEqual(Object.keys(schema.properties ?? {}).sort());
+    }
+  });
+
+  it("briefs a visitor as signed out", () => {
+    const t = { asRole: "visitor", question: "q" } as never;
+    expect(tryBrief(t, v, feats)).toContain("not signed in");
+  });
+});
