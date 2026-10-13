@@ -1,0 +1,13 @@
+apiVersion: orun.io/v1
+kind: TaskContract
+metadata:
+  name: QA-18
+spec:
+  goal: The Try page lets a person ask a plain question, as the owner or as a visitor, follow it while the runner's AI tries it on stage, and read the answer with its recording, what it did and the APIs it checked — and save it as a draft scenario of a feature if it is useful.
+  affects:
+    - default/orun-qa/web-console-next
+  doneWhen:
+    - asking a question shows it waiting or being tried, and the answer replaces it without a reload
+    - an answered try shows its headline, explanation, recording, steps and API checks
+    - saving a try makes a draft scenario of the chosen feature, and the try says it was saved
+  gates: []
