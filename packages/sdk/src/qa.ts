@@ -194,8 +194,8 @@ export class QaClient {
     return this.transport.request({ method: "POST", path: `${this.base(orgId, hubId)}/tries`, body }, opts);
   }
 
-  /** The caller's recent tries in the hub, newest first. */
-  listTries(orgId: string, hubId: string, opts: RequestOptions = {}): Promise<{ tries: PublicTry[] }> {
+  /** The caller's recent tries in the hub, newest first; `served`: the runner answers this workspace's tries. */
+  listTries(orgId: string, hubId: string, opts: RequestOptions = {}): Promise<{ tries: PublicTry[]; served: boolean }> {
     return this.transport.request({ method: "GET", path: `${this.base(orgId, hubId)}/tries` }, opts);
   }
 

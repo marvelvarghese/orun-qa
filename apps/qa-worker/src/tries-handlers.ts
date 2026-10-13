@@ -64,7 +64,17 @@ async function dispatch(ctx: Ctx, tryId: string): Promise<boolean> {
   }
 }
 
+/**
+ * Does the runner answer this workspace's tries? It serves one workspace
+ * (GITHUB_TRY_ORG). With none configured, every workspace is served — as in
+ * development and tests, where nothing dispatches anyway.
+ */
+export const triesServed = (ctx: Ctx) => !ctx.env.GITHUB_TRY_ORG || ctx.env.GITHUB_TRY_ORG === toPublic("org", ctx.orgId);
+
 export async function createTry(ctx: Ctx, hubId: string, request: Request): Promise<Response> {
+  if (!triesServed(ctx)) {
+    return errorResponse("conflict", "Tries run in Orun QA's own workspace on stage, where its runner works", 409, ctx.requestId, { reason: "not_served" });
+  }
   const body = await readJson(request);
   if (!body) return validationError(ctx.requestId, { body: ["Request body must be a JSON object"] });
   const fields: Fields = {};
@@ -111,7 +121,7 @@ export function listTries(ctx: Ctx, hubId: string): Promise<Response> {
     const hub = await repo.getHub(ctx.orgId, hubId);
     if (!hub.ok) return fromRepoError(hub.error, ctx.requestId);
     const r = await tries.listTries(ctx.orgId, hubId, ctx.actor.subjectId, TRY_LIMITS.recentMax);
-    return r.ok ? successResponse({ tries: r.value.map(publicTry) }, ctx.requestId) : fromRepoError(r.error, ctx.requestId);
+    return r.ok ? successResponse({ tries: r.value.map(publicTry), served: triesServed(ctx) }, ctx.requestId) : fromRepoError(r.error, ctx.requestId);
   });
 }
 

@@ -8,15 +8,19 @@
 //   QA_RUNNER_TOKEN  a bearer token to use instead of signing in
 //   QA_TRIGGER       schedule | deploy | manual  (default: manual)
 //   QA_REF           the commit under test       (default: GITHUB_SHA)
+//   QA_MODE          run | try                   (default: run — runs the scenarios, then answers any queued tries)
+//   ANTHROPIC_API_KEY  the AI that answers tries; without it a queued try is answered "not set up"
 
 import { appendFileSync } from "node:fs";
+import Anthropic from "@anthropic-ai/sdk";
 import { chromium } from "playwright";
 import { OrunQA } from "@saas/sdk";
 import { ORUN_QA_SELF } from "@saas/contracts/qa-self";
-import type { PublicResult, PublicRun, PublicScenario, RunTrigger, ScenarioCadence } from "@saas/contracts/qa";
+import type { PublicFeature, PublicResult, PublicRun, PublicScenario, RunTrigger, ScenarioCadence } from "@saas/contracts/qa";
 import { runScenario, type ConsoleSession } from "./browser.js";
 import { exitCode, sameScenario, type PathVars } from "./plan.js";
 import { ORUN_QA_SELF_SCENARIOS } from "./scenarios.js";
+import { runTry, TRY_MODEL } from "./try.js";
 
 const API_URL = process.env.QA_API_URL ?? "https://orun-qa-api-edge-stage.rahulvarghesepullely.workers.dev";
 const CONSOLE_URL = process.env.QA_CONSOLE_URL ?? "https://orun-qa-web-console-next-stage.rahulvarghesepullely.workers.dev";
@@ -28,6 +32,11 @@ const REQUEST_TIMEOUT_MS = 30_000;
 const REF = process.env.QA_REF ?? process.env.GITHUB_SHA ?? null;
 const STORAGE_PREFIX = "orun-qa.next";
 const SELF_HUB_SLUG = "orun-qa";
+const MODE = process.env.QA_MODE === "try" ? "try" : "run";
+/** A try job answers at most this many before it ends (the next job takes the rest). */
+const TRIES_PER_JOB = 5;
+/** After the scenarios, a scheduled run answers only a couple, so tries never push it past its timeout. */
+const TRIES_AFTER_RUN = 2;
 
 /** Which cadences a trigger runs: a schedule runs the daily set, a deploy adds release checks. */
 const CADENCES: Record<RunTrigger, ScenarioCadence[]> = {
@@ -102,13 +111,16 @@ async function main(): Promise<number> {
     if (written?.state === "draft") await client.qa.approveScenario(org.id, hub.id, written.id, { updatedAt: written.updatedAt });
   }
 
+  const session: ConsoleSession = { consoleUrl: CONSOLE_URL, apiUrl: API_URL, token, storagePrefix: STORAGE_PREFIX };
+  const featureList = (await client.qa.listFeatures(org.id, hub.id)).features;
+  if (MODE === "try") return answerTries(client, org.id, hub.id, vars, featureList, session, TRIES_PER_JOB);
+
   const cadences = CADENCES[TRIGGER] ?? CADENCES.manual;
   const toRun = (await client.qa.listScenarios(org.id, hub.id)).scenarios.filter((s) => s.state === "approved" && cadences.includes(s.cadence));
   const hubId = hub.id;
   const run = (await client.qa.createRun(org.id, hubId, { trigger: TRIGGER, env: "stage", ref: REF })).run;
   log(`run ${run.id}: ${toRun.length} scenario(s)`);
 
-  const session: ConsoleSession = { consoleUrl: CONSOLE_URL, apiUrl: API_URL, token, storagePrefix: STORAGE_PREFIX };
   const results: { scenario: PublicScenario; result: PublicResult }[] = [];
   let runnerBroke = false;
   let finished: PublicRun | null = null;
@@ -168,7 +180,53 @@ async function main(): Promise<number> {
       [`### Orun QA run — ${done.status}`, "", `${TRIGGER} run on stage${REF ? ` at \`${REF.slice(0, 7)}\`` : ""}`, "", "| | Scenario | Verdict | Time | Recording |", "|---|---|---|---|---|", ...rows, ""].join("\n"),
     );
   }
+  // Answer any tries still waiting (when no dispatch started them at once). Their outcome never fails the run.
+  await answerTries(client, org.id, hubId, vars, featureList, session, TRIES_AFTER_RUN).catch((err: unknown) => log(`tries: ${err instanceof Error ? err.message : String(err)}`));
   return runnerBroke ? 1 : exitCode(results.map((r) => r.result.verdict));
+}
+
+/**
+ * Take queued tries one at a time and answer each with the AI. Without an AI
+ * key, each is answered plainly that trying is not set up, rather than left
+ * waiting. Returns the job's exit code: only a broken runner fails it.
+ */
+async function answerTries(client: OrunQA, orgId: string, hubId: string, vars: PathVars, features: PublicFeature[], session: ConsoleSession, max: number): Promise<number> {
+  const key = process.env.ANTHROPIC_API_KEY;
+  let browser: Awaited<ReturnType<typeof chromium.launch>> | null = null;
+  let answered = 0;
+  try {
+    for (let i = 0; i < max; i++) {
+      const claimed = (await client.qa.claimTry(orgId, hubId)).try;
+      if (!claimed) break;
+      if (!key) {
+        await client.qa.postTryResult(orgId, hubId, claimed.id, { error: "Trying is not set up yet: the runner has no AI key (ANTHROPIC_API_KEY)." });
+        log(`try ${claimed.id}: no AI key`);
+        continue;
+      }
+      browser ??= await chromium.launch({ headless: process.env.QA_HEADED !== "1" });
+      const anthropic = new Anthropic({ apiKey: key });
+      try {
+        const out = await runTry(browser, anthropic, claimed, vars, features, session, log);
+        await client.qa.postTryResult(orgId, hubId, claimed.id, out.result);
+        answered++;
+      } catch (err) {
+        // Never leave a claimed try running: say it could not be answered (once more if that fails too).
+        const error = `The runner could not finish this try: ${err instanceof Error ? err.message : String(err)}`.slice(0, 4000);
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const sent = await client.qa.postTryResult(orgId, hubId, claimed.id, { error }).then(
+            () => true,
+            () => false,
+          );
+          if (sent) break;
+        }
+        log(`try ${claimed.id}: runner error`);
+      }
+    }
+  } finally {
+    await browser?.close().catch(() => undefined);
+  }
+  if (answered > 0) log(`answered ${answered} tr${answered === 1 ? "y" : "ies"} with ${TRY_MODEL}`);
+  return 0;
 }
 
 main().then(

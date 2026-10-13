@@ -75,7 +75,8 @@ async function latestByScenario(runs: QaRunsRepository, orgId: string, hubId: st
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
 const shortStr = (v: unknown, max: number) => typeof v === "string" && v.length > 0 && v.length <= max;
 const optShort = (v: unknown, max: number) => v === undefined || shortStr(v, max);
-const isPath = (v: unknown) => typeof v === "string" && v.startsWith("/") && !v.startsWith("//") && v.length <= QA_LIMITS.refMax;
+/** A path on this product: starts with one slash, and no backslash — browsers read "/\\host" as another site. */
+const isPath = (v: unknown) => typeof v === "string" && v.startsWith("/") && !v.startsWith("//") && !v.includes("\\") && v.length <= QA_LIMITS.refMax;
 const METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE"]);
 const int = (v: unknown, min: number, max: number) => typeof v === "number" && Number.isInteger(v) && v >= min && v <= max;
 
